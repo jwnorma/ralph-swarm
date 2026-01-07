@@ -92,7 +92,9 @@ class TestBuildPriorArtSection:
 class TestSpecifyCommand:
     """Tests for the specify CLI command."""
 
-    def test_specify_requires_claude_md(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_specify_requires_claude_md(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Specify should fail without CLAUDE.md."""
         monkeypatch.chdir(tmp_path)
 
@@ -125,7 +127,9 @@ class TestSpecifyCommand:
         assert result.exit_code == 0
         assert "Full Specification" in result.output
 
-    def test_specify_interactive_full_mode(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_specify_interactive_full_mode(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Selecting option 2 should trigger full specification mode."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "CLAUDE.md").write_text("# Project")
@@ -137,7 +141,9 @@ class TestSpecifyCommand:
         assert result.exit_code == 0
         assert "Full Specification" in result.output
 
-    def test_specify_creates_specs_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_specify_creates_specs_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Specify should create specs directory if missing."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "CLAUDE.md").write_text("# Project")

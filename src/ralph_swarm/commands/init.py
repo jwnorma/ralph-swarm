@@ -20,7 +20,9 @@ def check_dependencies() -> list[str]:
     missing = []
     for cmd in ["claude", "bd", "git"]:
         result = subprocess.run(
-            ["which", cmd], capture_output=True, text=True  # noqa: S603, S607
+            ["which", cmd],
+            capture_output=True,
+            text=True,  # noqa: S603, S607
         )
         if result.returncode != 0:
             missing.append(cmd)
@@ -51,10 +53,12 @@ def init_cmd() -> None:
     project_path = Path.cwd()
     project_name = project_path.name
 
-    console.print(Panel.fit(
-        "[bold blue]Ralph Swarm[/bold blue] - Project Initialization",
-        subtitle=f"Directory: {project_name}"
-    ))
+    console.print(
+        Panel.fit(
+            "[bold blue]Ralph Swarm[/bold blue] - Project Initialization",
+            subtitle=f"Directory: {project_name}",
+        )
+    )
 
     # Check if already initialized
     if is_initialized(project_path):
@@ -180,8 +184,11 @@ def init_cmd() -> None:
     console.print("[bold]Created:[/bold] .claude/agents/adr.md")
 
     # Create build.sh
-    build_sh_content = '''#!/bin/bash
-# Build script for ''' + project_name + '''
+    build_sh_content = (
+        """#!/bin/bash
+# Build script for """
+        + project_name
+        + """
 
 set -e
 
@@ -207,7 +214,8 @@ case "${1:-help}" in
         exit 1
         ;;
 esac
-'''
+"""
+    )
 
     build_sh_file = project_path / "build.sh"
     build_sh_file.write_text(build_sh_content)
@@ -241,17 +249,22 @@ build.sh                    # Build commands
 
 ## Subagents
 
-This project uses Claude Code subagents for quality assurance and documentation. Subagents are automatically available and should be used by delegating to them.
+This project uses Claude Code subagents for quality assurance and documentation.
+Subagents are automatically available and should be used by delegating to them.
 
 ### During Implementation
 
-**adr** - Use this subagent when making architectural decisions (choosing libraries, patterns, data structures). Check `adr/` for existing decisions before implementing.
+**adr** - Use when making architectural decisions (choosing libraries, patterns).
+Check `adr/` for existing decisions before implementing.
 
 ### Before Completing Tasks
 
-**code-reviewer** - Use this subagent after implementation to review changes for security, code quality, and documentation accuracy.
+**code-reviewer** - Use after implementation to review changes for security,
+code quality, and documentation accuracy.
 
-**are-we-done** (REQUIRED) - Use this subagent before marking any task complete. It runs build, tests, and all configured checks. Do not close an issue until this returns "READY TO COMPLETE".
+**are-we-done** (REQUIRED) - Use before marking any task complete.
+Runs build, tests, and all configured checks.
+Do not close an issue until this returns "READY TO COMPLETE".
 
 ## Build & Test
 
@@ -275,7 +288,7 @@ This project uses [beads](https://github.com/steveyegge/beads) for issue trackin
 
     claude_md_file = project_path / "CLAUDE.md"
     claude_md_file.write_text(claude_md_content)
-    console.print(f"[bold]Created:[/bold] CLAUDE.md")
+    console.print("[bold]Created:[/bold] CLAUDE.md")
 
     # Create .gitignore
     gitignore_content = """# Python
@@ -307,11 +320,13 @@ Thumbs.db
         console.print("[bold]Created:[/bold] .gitignore")
 
     # Summary
-    console.print(Panel.fit(
-        "[green]Project initialized successfully![/green]\n\n"
-        "Next steps:\n"
-        "  1. Run [bold]ralph specify[/bold] to define V0 specs\n"
-        "  2. Run [bold]ralph plan[/bold] to create epics and stories\n"
-        "  3. Run [bold]ralph build[/bold] to start implementation",
-        title="Done"
-    ))
+    console.print(
+        Panel.fit(
+            "[green]Project initialized successfully![/green]\n\n"
+            "Next steps:\n"
+            "  1. Run [bold]ralph specify[/bold] to define V0 specs\n"
+            "  2. Run [bold]ralph plan[/bold] to create epics and stories\n"
+            "  3. Run [bold]ralph build[/bold] to start implementation",
+            title="Done",
+        )
+    )

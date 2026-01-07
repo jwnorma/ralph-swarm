@@ -114,10 +114,10 @@ def cleanup_cmd(force: bool, discard_changes: bool) -> None:
     console.print()
 
     # Confirm cleanup
-    if not force:
-        if not Confirm.ask(f"[yellow]Reset {len(orphaned)} orphaned issue(s) to 'open'?[/yellow]"):
-            console.print("Cancelled.")
-            return
+    prompt = f"[yellow]Reset {len(orphaned)} orphaned issue(s) to 'open'?[/yellow]"
+    if not force and not Confirm.ask(prompt):
+        console.print("Cancelled.")
+        return
 
     # Reset orphaned issues
     console.print("\n[bold]Resetting orphaned issues...[/bold]")
@@ -144,7 +144,8 @@ def cleanup_cmd(force: bool, discard_changes: bool) -> None:
         )
 
         changes = [
-            line for line in result.stdout.strip().split("\n")
+            line
+            for line in result.stdout.strip().split("\n")
             if line and not line.strip().startswith(".beads/")
         ]
 

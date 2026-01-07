@@ -39,11 +39,13 @@ def build_prior_art_section(prior_art: list[str]) -> str:
     lines = ["## Prior Art", "", "Review these projects for inspiration:", ""]
     for ref in prior_art:
         lines.append(f"- {ref}")
-    lines.extend([
-        "",
-        "Look at their documentation, architecture, and user experience.",
-        "Learn from their patterns but don't copy complexity.",
-    ])
+    lines.extend(
+        [
+            "",
+            "Look at their documentation, architecture, and user experience.",
+            "Learn from their patterns but don't copy complexity.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -72,7 +74,9 @@ def gather_prior_art() -> list[str]:
 
 
 @click.command("specify")
-@click.option("--model", "-m", default="opus", show_default=True, help="Model to use (sonnet, opus, haiku)")
+@click.option(
+    "--model", "-m", default="opus", show_default=True, help="Model to use (sonnet, opus, haiku)"
+)
 @click.option("--verbose", "-v", is_flag=True, help="Show Claude output in real-time")
 @click.option("--dry-run", is_flag=True, help="Show prompt without executing")
 @click.option("--full", is_flag=True, help="Full specification mode with comprehensive Q&A")
@@ -109,10 +113,11 @@ def specify_cmd(
         mode_label = "Full Specification"
     elif status["has_v0"]:
         # V0 exists, ask what they want to do
-        console.print(Panel.fit(
-            "[bold blue]Ralph Swarm[/bold blue] - Specify Mode",
-            subtitle=f"Model: {model}"
-        ))
+        console.print(
+            Panel.fit(
+                "[bold blue]Ralph Swarm[/bold blue] - Specify Mode", subtitle=f"Model: {model}"
+            )
+        )
 
         console.print("[bold]Existing V0 specs found:[/bold]")
         for f in status.get("v0_files", []):
@@ -128,10 +133,11 @@ def specify_cmd(
             mode_label = "Refine V0"
     else:
         # No V0 exists, ask which mode they want
-        console.print(Panel.fit(
-            "[bold blue]Ralph Swarm[/bold blue] - Specify Mode",
-            subtitle=f"Model: {model}"
-        ))
+        console.print(
+            Panel.fit(
+                "[bold blue]Ralph Swarm[/bold blue] - Specify Mode", subtitle=f"Model: {model}"
+            )
+        )
 
         console.print("[bold]How would you like to specify this project?[/bold]\n")
         console.print("  [bold]1.[/bold] Iterative [dim](recommended)[/dim]")
@@ -148,10 +154,12 @@ def specify_cmd(
             mode = "initial"
             mode_label = "Initial V0"
 
-    console.print(Panel.fit(
-        "[bold blue]Ralph Swarm[/bold blue] - Specify Mode",
-        subtitle=f"{mode_label} | Model: {model}"
-    ))
+    console.print(
+        Panel.fit(
+            "[bold blue]Ralph Swarm[/bold blue] - Specify Mode",
+            subtitle=f"{mode_label} | Model: {model}",
+        )
+    )
 
     # Show existing specs
     if status["exists"] and status["files"]:
@@ -197,16 +205,20 @@ def specify_cmd(
 
     # Explain the process before launching
     console.print()
-    console.print(Panel(
-        "[bold]How this works:[/bold]\n\n"
-        "1. An interactive Claude Code session will start\n"
-        "2. Work with Claude to define your specifications\n"
-        "3. Claude will create spec files in the [bold]specs/[/bold] directory\n"
-        "4. When finished, type [bold]/exit[/bold] or press [bold]Ctrl+C[/bold] to end the session\n\n"
-        "[dim]The session is collaborative - ask questions, refine scope, iterate.[/dim]",
-        title="Interactive Session",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            "[bold]How this works:[/bold]\n\n"
+            "1. An interactive Claude Code session will start\n"
+            "2. Work with Claude to define your specifications\n"
+            "3. Claude will create spec files in the [bold]specs/[/bold] directory\n"
+            "4. When finished, type [bold]/exit[/bold] or press "
+            "[bold]Ctrl+C[/bold] to end the session\n\n"
+            "[dim]The session is collaborative - ask questions, refine scope, "
+            "iterate.[/dim]",
+            title="Interactive Session",
+            border_style="blue",
+        )
+    )
 
     if not Confirm.ask("\n[bold]Ready to start?[/bold]"):
         console.print("[yellow]Cancelled[/yellow]")
@@ -217,7 +229,8 @@ def specify_cmd(
     # Run Claude interactively
     cmd = [
         "claude",
-        "--model", model,
+        "--model",
+        model,
     ]
 
     if verbose:
@@ -252,11 +265,13 @@ def specify_cmd(
         for f in new_status["files"]:
             console.print(f"  specs/{f}")
 
-    console.print(Panel.fit(
-        "[green]Specification session complete![/green]\n\n"
-        "Next steps:\n"
-        "  1. Review specs: [bold]ls specs/[/bold]\n"
-        "  2. Run planning: [bold]ralph plan[/bold]\n"
-        "  3. Start building: [bold]ralph build[/bold]",
-        title="Done"
-    ))
+    console.print(
+        Panel.fit(
+            "[green]Specification session complete![/green]\n\n"
+            "Next steps:\n"
+            "  1. Review specs: [bold]ls specs/[/bold]\n"
+            "  2. Run planning: [bold]ralph plan[/bold]\n"
+            "  3. Start building: [bold]ralph build[/bold]",
+            title="Done",
+        )
+    )

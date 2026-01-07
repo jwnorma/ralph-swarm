@@ -42,7 +42,9 @@ class TestIsInitialized:
 class TestInitCommand:
     """Tests for the init CLI command."""
 
-    def test_init_fails_when_already_initialized_beads(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_init_fails_when_already_initialized_beads(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Init should fail if .beads exists."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".beads").mkdir()
@@ -53,7 +55,9 @@ class TestInitCommand:
         assert result.exit_code == 1
         assert "already initialized" in result.output
 
-    def test_init_fails_when_already_initialized_claude_md(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_init_fails_when_already_initialized_claude_md(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Init should fail if CLAUDE.md exists."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "CLAUDE.md").write_text("# Existing")
@@ -64,7 +68,9 @@ class TestInitCommand:
         assert result.exit_code == 1
         assert "already initialized" in result.output
 
-    def test_init_shows_removal_instructions(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_init_shows_removal_instructions(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Init should show how to remove existing files."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".beads").mkdir()

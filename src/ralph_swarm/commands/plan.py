@@ -28,6 +28,7 @@ def get_beads_summary(cwd: Path) -> dict[str, int]:
         return {}
 
     import json
+
     try:
         issues = json.loads(result.stdout)
         summary = {"total": len(issues), "open": 0, "in_progress": 0, "closed": 0}
@@ -41,10 +42,14 @@ def get_beads_summary(cwd: Path) -> dict[str, int]:
 
 
 @click.command("plan")
-@click.option("--model", "-m", default="opus", show_default=True, help="Model to use (sonnet, opus, haiku)")
+@click.option(
+    "--model", "-m", default="opus", show_default=True, help="Model to use (sonnet, opus, haiku)"
+)
 @click.option("--verbose", "-v", is_flag=True, help="Show Claude output in real-time")
 @click.option("--dry-run", is_flag=True, help="Show prompt without executing")
-@click.option("--iterations", "-n", default=1, show_default=True, help="Number of planning iterations")
+@click.option(
+    "--iterations", "-n", default=1, show_default=True, help="Number of planning iterations"
+)
 def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
     """Run planning mode to create epics and stories.
 
@@ -62,10 +67,9 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
         console.print("[red]Beads not initialized. Run 'ralph init' first.[/red]")
         sys.exit(1)
 
-    console.print(Panel.fit(
-        "[bold blue]Ralph Swarm[/bold blue] - Planning Mode",
-        subtitle=f"Model: {model}"
-    ))
+    console.print(
+        Panel.fit("[bold blue]Ralph Swarm[/bold blue] - Planning Mode", subtitle=f"Model: {model}")
+    )
 
     # Show current state
     summary = get_beads_summary(cwd)
@@ -98,7 +102,8 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
             "claude",
             "--print",
             "--dangerously-skip-permissions",
-            "--model", model,
+            "--model",
+            model,
         ]
 
         if verbose:
@@ -151,11 +156,13 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
         console.print("\n[bold]Ready issues:[/bold]")
         subprocess.run(["bd", "ready"], cwd=cwd)  # noqa: S603, S607
 
-    console.print(Panel.fit(
-        "[green]Planning complete![/green]\n\n"
-        "Next steps:\n"
-        "  1. Review created issues: [bold]bd list[/bold]\n"
-        "  2. Check dependency graph: [bold]bd ready[/bold]\n"
-        "  3. Start building: [bold]ralph build[/bold]",
-        title="Done"
-    ))
+    console.print(
+        Panel.fit(
+            "[green]Planning complete![/green]\n\n"
+            "Next steps:\n"
+            "  1. Review created issues: [bold]bd list[/bold]\n"
+            "  2. Check dependency graph: [bold]bd ready[/bold]\n"
+            "  3. Start building: [bold]ralph build[/bold]",
+            title="Done",
+        )
+    )

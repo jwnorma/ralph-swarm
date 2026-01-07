@@ -1,5 +1,6 @@
 """Build command - Build mode with worker swarm support."""
 
+import contextlib
 import json
 import os
 import signal
@@ -66,7 +67,8 @@ def run_single_worker(
         "claude",
         "--print",
         "--dangerously-skip-permissions",
-        "--model", model,
+        "--model",
+        model,
     ]
 
     if verbose:
@@ -77,9 +79,9 @@ def run_single_worker(
     try:
         if log_file:
             with open(log_file, "a") as f:
-                f.write(f"\n{'='*60}\n")
+                f.write(f"\n{'=' * 60}\n")
                 f.write(f"Worker: {worker_id} | Time: {datetime.now().isoformat()}\n")
-                f.write(f"{'='*60}\n\n")
+                f.write(f"{'=' * 60}\n\n")
 
                 result = subprocess.run(  # noqa: S603
                     cmd,
@@ -123,7 +125,9 @@ def run_single_worker(
 
 @click.command("build")
 @click.option("--workers", "-w", default=1, show_default=True, help="Number of parallel workers")
-@click.option("--model", "-m", default="sonnet", show_default=True, help="Model to use (sonnet, opus, haiku)")
+@click.option(
+    "--model", "-m", default="sonnet", show_default=True, help="Model to use (sonnet, opus, haiku)"
+)
 @click.option("--verbose", "-v", is_flag=True, help="Show Claude output in real-time")
 @click.option("--once", is_flag=True, help="Run single iteration instead of looping")
 @click.option("--auto-shutdown", is_flag=True, help="Shutdown when no work remains")
@@ -154,10 +158,12 @@ def build_cmd(
         console.print("[red]Beads not initialized. Run 'ralph init' first.[/red]")
         sys.exit(1)
 
-    console.print(Panel.fit(
-        "[bold blue]Ralph Swarm[/bold blue] - Build Mode",
-        subtitle=f"Workers: {workers} | Model: {model}"
-    ))
+    console.print(
+        Panel.fit(
+            "[bold blue]Ralph Swarm[/bold blue] - Build Mode",
+            subtitle=f"Workers: {workers} | Model: {model}",
+        )
+    )
 
     # Show current work status
     status = get_work_status(cwd)
@@ -237,13 +243,17 @@ def run_single_worker_loop(
 
     try:
         while True:
-            console.print(f"[bold]Iteration {iteration}[/bold] - {datetime.now().strftime('%H:%M:%S')}")
+            console.print(
+                f"[bold]Iteration {iteration}[/bold] - {datetime.now().strftime('%H:%M:%S')}"
+            )
 
             # Check for available work
             status = get_work_status(cwd)
             if status["unassigned"] == 0:
                 idle_count += 1
-                console.print(f"[yellow]No unassigned work (idle: {idle_count}/{idle_limit})[/yellow]")
+                console.print(
+                    f"[yellow]No unassigned work (idle: {idle_count}/{idle_limit})[/yellow]"
+                )
 
                 if auto_shutdown and idle_count >= idle_limit:
                     console.print("[green]Auto-shutdown: no work remaining[/green]")
@@ -324,7 +334,8 @@ while true; do
 
     idle_count=0
 
-    claude --print --dangerously-skip-permissions --model {model} '{get_worker_prompt(worker_id)}' >> "{log_path}" 2>&1
+    claude --print --dangerously-skip-permissions --model {model} \\
+        '{get_worker_prompt(worker_id)}' >> "{log_path}" 2>&1
 
     ((iteration++))
     sleep 2
@@ -360,10 +371,8 @@ done
     def shutdown(sig, frame):
         console.print("\n[yellow]Stopping all workers...[/yellow]")
         for p in processes:
-            try:
+            with contextlib.suppress(ProcessLookupError):
                 p.terminate()
-            except ProcessLookupError:
-                pass
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)

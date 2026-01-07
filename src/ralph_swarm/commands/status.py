@@ -87,10 +87,7 @@ def status_cmd(verbose: bool, tree: bool) -> None:
         console.print("Run 'ralph init' to initialize a project.")
         sys.exit(1)
 
-    console.print(Panel.fit(
-        "[bold blue]Ralph Swarm[/bold blue] - Status",
-        subtitle=str(cwd.name)
-    ))
+    console.print(Panel.fit("[bold blue]Ralph Swarm[/bold blue] - Status", subtitle=str(cwd.name)))
 
     # Get all issues
     all_issues = get_issues(cwd)
@@ -251,7 +248,7 @@ def status_cmd(verbose: bool, tree: bool) -> None:
             f"[dim]{'░' * remaining_width}[/dim]"
         )
 
-        console.print(f"Progress: {bar} {completed}/{total} ({completed/total*100:.1f}%)")
+        console.print(f"Progress: {bar} {completed}/{total} ({completed / total * 100:.1f}%)")
 
 
 def show_issue_tree(issues: list[dict]) -> None:
