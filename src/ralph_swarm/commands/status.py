@@ -15,6 +15,23 @@ from rich.tree import Tree
 console = Console()
 
 
+def extract_bead_id(full_id: str) -> str:
+    """Extract the bead ID from a full ID string.
+
+    Bead IDs follow the convention <project>-<bead_id>, so this returns
+    the portion after the last hyphen. If no hyphen exists, returns the
+    full ID.
+
+    Examples:
+        "myproject-123" -> "123"
+        "my-project-456" -> "456"
+        "abc123" -> "abc123"
+    """
+    if "-" in full_id:
+        return full_id.rsplit("-", 1)[-1]
+    return full_id
+
+
 def get_issues(cwd: Path, status_filter: str | None = None) -> list[dict]:
     """Get issues from beads."""
     cmd = ["bd", "list", "--json", "--all", "--limit", "0"]
@@ -96,18 +113,13 @@ def status_cmd(verbose: bool, tree: bool) -> None:
     # Count by status
     status_counts = {"open": 0, "in_progress": 0, "closed": 0}
     type_counts: dict[str, int] = {}
-    assignee_counts: dict[str, int] = {}
 
     for issue in all_issues:
         status = issue.get("status", "open")
         issue_type = issue.get("type", "task")
-        assignee = issue.get("assignee", "")
 
         status_counts[status] = status_counts.get(status, 0) + 1
         type_counts[issue_type] = type_counts.get(issue_type, 0) + 1
-
-        if assignee and status == "in_progress":
-            assignee_counts[assignee] = assignee_counts.get(assignee, 0) + 1
 
     # Summary table
     summary_table = Table(title="Issue Summary", show_header=True)
@@ -167,7 +179,7 @@ def status_cmd(verbose: bool, tree: bool) -> None:
                 priority_display = escape(priority)
 
             ready_table.add_row(
-                issue.get("id", "")[:8],
+                extract_bead_id(issue.get("id", "")),
                 escape(str(issue.get("type", "task"))),
                 priority_display,
                 escape(str(issue.get("title", ""))[:40]),
@@ -181,16 +193,24 @@ def status_cmd(verbose: bool, tree: bool) -> None:
 
         console.print()
 
-    # In progress by worker
-    if assignee_counts:
-        worker_table = Table(title="In Progress by Worker", show_header=True)
-        worker_table.add_column("Worker", style="bold")
-        worker_table.add_column("Issues", justify="right")
+    # In progress issues
+    in_progress_issues = [i for i in all_issues if i.get("status") == "in_progress"]
+    if in_progress_issues:
+        progress_table = Table(title="In Progress", show_header=True)
+        progress_table.add_column("ID", style="dim")
+        progress_table.add_column("Type")
+        progress_table.add_column("Title")
+        progress_table.add_column("Worker", style="bold")
 
-        for worker, count in sorted(assignee_counts.items()):
-            worker_table.add_row(escape(str(worker)), str(count))
+        for issue in in_progress_issues:
+            progress_table.add_row(
+                extract_bead_id(issue.get("id", "")),
+                escape(str(issue.get("type", "task"))),
+                escape(str(issue.get("title", ""))[:50]),
+                escape(str(issue.get("assignee") or "-")),
+            )
 
-        console.print(worker_table)
+        console.print(progress_table)
         console.print()
 
     # Check for running workers
@@ -223,7 +243,7 @@ def status_cmd(verbose: bool, tree: bool) -> None:
             }.get(issue_status, "")
 
             verbose_table.add_row(
-                issue.get("id", "")[:8],
+                extract_bead_id(issue.get("id", "")),
                 f"[{status_color}]{escape(issue_status)}[/{status_color}]",
                 escape(str(issue.get("type", "task"))),
                 escape(str(issue.get("priority", "medium"))),

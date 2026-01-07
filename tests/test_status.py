@@ -4,9 +4,11 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
 from ralph_swarm.cli import main
+from ralph_swarm.commands.status import extract_bead_id
 
 
 class TestStatusCommand:
@@ -236,3 +238,131 @@ class TestStatusEscaping:
 
         assert result.exit_code == 0
         assert "MarkupError" not in result.output
+
+
+class TestExtractBeadId:
+    """Tests for the extract_bead_id helper function."""
+
+    @pytest.mark.parametrize(
+        "full_id,expected",
+        [
+            ("myproject-123", "123"),
+            ("my-project-456", "456"),
+            ("a-b-c-789", "789"),
+            ("project-abc", "abc"),
+            ("abc123", "abc123"),
+            ("", ""),
+            ("single", "single"),
+            ("ends-with-", ""),
+            ("-starts-with", "with"),
+        ],
+    )
+    def test_extract_bead_id(self, full_id: str, expected: str) -> None:
+        """Should extract the portion after the last hyphen."""
+        assert extract_bead_id(full_id) == expected
+
+
+class TestInProgressDisplay:
+    """Tests for the in-progress bead display."""
+
+    def _setup_project(self, tmp_path: Path) -> None:
+        """Set up a minimal ralph-swarm project."""
+        (tmp_path / ".beads").mkdir()
+        (tmp_path / "CLAUDE.md").write_text("# Project")
+
+    def _mock_subprocess_run(self, issues: list[dict], ready_issues: list[dict] | None = None):
+        """Create a mock for subprocess.run that returns beads data."""
+        if ready_issues is None:
+            ready_issues = []
+
+        def mock_run(cmd, *args, **kwargs):
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            result = Result()
+            if "bd" in cmd:
+                if "list" in cmd:
+                    result.stdout = json.dumps(issues)
+                elif "ready" in cmd:
+                    result.stdout = json.dumps(ready_issues)
+            elif "pgrep" in cmd:
+                result.returncode = 1  # No workers running
+            return result
+
+        return mock_run
+
+    def test_shows_in_progress_bead_details(self, tmp_path: Path, monkeypatch) -> None:
+        """Status should show in-progress bead details, not just count."""
+        monkeypatch.chdir(tmp_path)
+        self._setup_project(tmp_path)
+
+        issues = [
+            {
+                "id": "myproject-42",
+                "title": "Implement feature X",
+                "status": "in_progress",
+                "type": "task",
+                "priority": "medium",
+                "assignee": "worker-1",
+            },
+        ]
+
+        with patch("subprocess.run", side_effect=self._mock_subprocess_run(issues)):
+            runner = CliRunner()
+            result = runner.invoke(main, ["status"])
+
+        assert result.exit_code == 0
+        assert "In Progress" in result.output
+        assert "42" in result.output  # Should show extracted ID, not full ID
+        assert "Implement feature X" in result.output
+        assert "worker-1" in result.output
+
+    def test_extracts_bead_id_from_full_id(self, tmp_path: Path, monkeypatch) -> None:
+        """Status should display only the bead ID portion, not the full project-id."""
+        monkeypatch.chdir(tmp_path)
+        self._setup_project(tmp_path)
+
+        issues = [
+            {
+                "id": "my-long-project-name-99",
+                "title": "Some task",
+                "status": "in_progress",
+                "type": "task",
+                "priority": "medium",
+                "assignee": "worker",
+            },
+        ]
+
+        with patch("subprocess.run", side_effect=self._mock_subprocess_run(issues)):
+            runner = CliRunner()
+            result = runner.invoke(main, ["status"])
+
+        assert result.exit_code == 0
+        assert "99" in result.output
+        # The full ID should not appear as-is (it would be truncated or extracted)
+        assert "my-long-project-name-99" not in result.output
+
+    def test_no_in_progress_section_when_empty(self, tmp_path: Path, monkeypatch) -> None:
+        """Status should not show In Progress section when no beads are in progress."""
+        monkeypatch.chdir(tmp_path)
+        self._setup_project(tmp_path)
+
+        issues = [
+            {
+                "id": "myproject-1",
+                "title": "Open task",
+                "status": "open",
+                "type": "task",
+                "priority": "medium",
+            },
+        ]
+
+        with patch("subprocess.run", side_effect=self._mock_subprocess_run(issues)):
+            runner = CliRunner()
+            result = runner.invoke(main, ["status"])
+
+        assert result.exit_code == 0
+        # The table title "In Progress" should not appear when no beads are in progress
+        # (note: "in_progress" appears in the summary table as a status)

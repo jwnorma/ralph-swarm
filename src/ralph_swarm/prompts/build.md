@@ -22,7 +22,7 @@
    - Create tasks: `bd create "Task title" -t task -p <priority> --description "..."`
    - Link to epic: `bd dep add <task-id> --parent <epic-id>`
    - Close epic: `bd close <epic-id> --reason "Decomposed into N tasks"`
-   - Skip to step 6
+   - Skip to step 6 (code review)
 
 3. **If you claimed a task/bug/feature:**
    - Search codebase before implementing (delegate to Explore subagent for complex searches)
@@ -30,12 +30,7 @@
    - Implement the issue fully (no placeholders)
    - Run tests for that unit of code
 
-4. **When making architectural decisions:**
-   - Use the `adr` subagent to document the decision
-   - Examples: choosing libraries, design patterns, data structures, API designs
-   - This helps future agents understand why choices were made
-
-5. **When you discover bugs or follow-up work:**
+4. **When you discover bugs or follow-up work:**
    - File new issue: `bd create "Title" -t bug -p <priority>`
    - Link dependencies if needed
    - Continue with current task
@@ -46,7 +41,17 @@
    - Do NOT close implementation tasks as duplicate without doing the work
    - If you created a duplicate, close YOUR task and note which task covers it
 
-6. **After implementation - use the code-reviewer subagent:**
+5. **After implementation - document architectural decisions (REQUIRED if applicable):**
+   - Use the `adr` subagent if you did ANY of the following:
+     - Added a new dependency or library
+     - Chose between multiple valid approaches
+     - Established a pattern others should follow
+     - Made a decision that affects system architecture
+   - Examples: choosing BAML vs LangChain, PyJWT vs python-jose, REST vs GraphQL
+   - Do NOT skip this step - undocumented decisions create confusion for future agents
+   - If no architectural decisions were made, proceed to step 6
+
+6. **After ADR (if any) - use the code-reviewer subagent:**
    - Delegate to the `code-reviewer` subagent to review your changes
    - Address CRITICAL issues before proceeding
    - File WARNINGS as beads issues for later
