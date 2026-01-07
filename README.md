@@ -4,6 +4,8 @@ AI-powered autonomous development swarm orchestrator. Uses Claude Code and Beads
 
 ## Installation
 
+Ensure you have the [required dependencies](#dependencies) installed first.
+
 ```bash
 # Clone the repository
 git clone https://github.com/your-org/ralph-swarm.git
@@ -51,22 +53,28 @@ Fails fast if the project is already initialized.
 
 ### `ralph specify`
 
-Build specifications interactively:
-- **Initial mode** (no V0 exists): Define V0 scope with ruthless minimalism
-- **Incremental mode**: Add features after V0 is complete
-- Supports multiple component specs (e.g., `v0-frontend.md`, `v0-backend.md`)
-- Prompts for prior art references (URLs, repos, similar tools)
+Build specifications interactively. Two modes available:
+
+**Iterative mode (default):**
+- Start with minimal V0 specs
+- Add features incrementally as needed
+- Best for most projects - ship early, iterate often
+
+**Full specification mode:**
+- Comprehensive Q&A to fully understand the project upfront
+- Claude asks many questions before writing any specs
+- Best for complex projects where upfront planning saves time
 
 Options:
 - `--model, -m` - Model to use (sonnet, opus, haiku)
-- `--feature, -f` - Add a specific feature (incremental mode)
+- `--full` - Use full specification mode (skip interactive selection)
 - `--verbose, -v` - Show real-time output
 - `--dry-run` - Show prompt without executing
 
 Examples:
 ```bash
-ralph specify                              # Initial V0 spec (prompts for prior art)
-ralph specify --feature "authentication"   # Add a feature
+ralph specify          # Interactive mode selection
+ralph specify --full   # Full specification mode directly
 ```
 
 ### `ralph plan`
@@ -124,7 +132,7 @@ Options:
 
 1. **Spec-driven**: Features follow specifications
 2. **Small units**: Do the smallest useful work
-3. **V0 first**: Start minimal, iterate from there
+3. **Two paths**: V0-first for fast iteration, or full specification for complex projects
 4. **Visibility**: Always show what's happening
 
 ## Dependencies

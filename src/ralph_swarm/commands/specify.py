@@ -75,24 +75,22 @@ def gather_prior_art() -> list[str]:
 @click.option("--model", "-m", default="opus", show_default=True, help="Model to use (sonnet, opus, haiku)")
 @click.option("--verbose", "-v", is_flag=True, help="Show Claude output in real-time")
 @click.option("--dry-run", is_flag=True, help="Show prompt without executing")
-@click.option(
-    "--feature", "-f",
-    help="Specify a new feature (incremental mode)",
-)
+@click.option("--full", is_flag=True, help="Full specification mode with comprehensive Q&A")
 def specify_cmd(
     model: str,
     verbose: bool,
     dry_run: bool,
-    feature: str | None,
+    full: bool,
 ) -> None:
     """Build project specifications interactively.
 
-    On first run (no V0 specs), creates initial V0 specification.
-    Use --feature to add new features incrementally.
+    Two modes available:
+    - Iterative (default): Start with minimal V0 specs, add features later
+    - Full (--full): Comprehensive Q&A to fully specify the project upfront
 
     Examples:
-        ralph specify                    # Initial V0 spec
-        ralph specify --feature "auth"   # Add authentication feature
+        ralph specify          # Interactive mode selection
+        ralph specify --full   # Full specification mode
     """
     cwd = Path.cwd()
 
@@ -105,9 +103,10 @@ def specify_cmd(
     status = get_spec_status(cwd)
 
     # Determine mode
-    if feature:
-        mode = "incremental"
-        mode_label = f"Add Feature: {feature}"
+    feature = None
+    if full:
+        mode = "full"
+        mode_label = "Full Specification"
     elif status["has_v0"]:
         # V0 exists, ask what they want to do
         console.print(Panel.fit(
@@ -121,16 +120,33 @@ def specify_cmd(
         console.print()
 
         if Confirm.ask("Add a new feature? (No to refine V0)"):
-            feature_name = Prompt.ask("Feature name")
+            feature = Prompt.ask("Feature name")
             mode = "incremental"
-            mode_label = f"Add Feature: {feature_name}"
-            feature = feature_name
+            mode_label = f"Add Feature: {feature}"
         else:
             mode = "initial"
             mode_label = "Refine V0"
     else:
-        mode = "initial"
-        mode_label = "Initial V0"
+        # No V0 exists, ask which mode they want
+        console.print(Panel.fit(
+            "[bold blue]Ralph Swarm[/bold blue] - Specify Mode",
+            subtitle=f"Model: {model}"
+        ))
+
+        console.print("[bold]How would you like to specify this project?[/bold]\n")
+        console.print("  [bold]1.[/bold] Iterative [dim](recommended)[/dim]")
+        console.print("     Start with minimal V0, add features incrementally\n")
+        console.print("  [bold]2.[/bold] Full specification")
+        console.print("     Comprehensive Q&A to fully specify upfront\n")
+
+        choice = Prompt.ask("Choose", choices=["1", "2"], default="1")
+
+        if choice == "2":
+            mode = "full"
+            mode_label = "Full Specification"
+        else:
+            mode = "initial"
+            mode_label = "Initial V0"
 
     console.print(Panel.fit(
         "[bold blue]Ralph Swarm[/bold blue] - Specify Mode",
@@ -160,7 +176,9 @@ def specify_cmd(
     prior_art_section = build_prior_art_section(prior_art_list)
 
     # Load appropriate prompt
-    if mode == "initial":
+    if mode == "full":
+        prompt_template = load_prompt("specify_full")
+    elif mode == "initial":
         prompt_template = load_prompt("specify_initial")
     else:
         prompt_template = load_prompt("specify_incremental")

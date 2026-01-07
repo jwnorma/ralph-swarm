@@ -103,30 +103,39 @@ class TestSpecifyCommand:
         assert "CLAUDE.md not found" in result.output
 
     def test_specify_dry_run_initial(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Dry run should show initial prompt when no v0 exists."""
+        """Dry run should show initial prompt when no v0 exists (iterative mode)."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "CLAUDE.md").write_text("# Project")
 
         runner = CliRunner()
-        result = runner.invoke(main, ["specify", "--dry-run"])
+        # Select iterative mode (option 1)
+        result = runner.invoke(main, ["specify", "--dry-run"], input="1\n")
 
         assert result.exit_code == 0
         assert "Initial V0" in result.output or "V0 Philosophy" in result.output
 
-    def test_specify_feature_flag(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """--feature flag should trigger incremental mode."""
+    def test_specify_full_flag(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """--full flag should trigger full specification mode."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / "CLAUDE.md").write_text("# Project")
 
         runner = CliRunner()
-        result = runner.invoke(main, [
-            "specify", "--dry-run",
-            "--feature", "authentication",
-        ])
+        result = runner.invoke(main, ["specify", "--dry-run", "--full"])
 
         assert result.exit_code == 0
-        assert "Add Feature" in result.output
-        assert "authentication" in result.output
+        assert "Full Specification" in result.output
+
+    def test_specify_interactive_full_mode(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Selecting option 2 should trigger full specification mode."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "CLAUDE.md").write_text("# Project")
+
+        runner = CliRunner()
+        # Select full mode (option 2)
+        result = runner.invoke(main, ["specify", "--dry-run"], input="2\n")
+
+        assert result.exit_code == 0
+        assert "Full Specification" in result.output
 
     def test_specify_creates_specs_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Specify should create specs directory if missing."""
@@ -134,8 +143,8 @@ class TestSpecifyCommand:
         (tmp_path / "CLAUDE.md").write_text("# Project")
 
         runner = CliRunner()
-        # Use dry-run to avoid actually running Claude
-        result = runner.invoke(main, ["specify", "--dry-run"])
+        # Use dry-run and --full to avoid interactive prompts
+        result = runner.invoke(main, ["specify", "--dry-run", "--full"])
 
         assert result.exit_code == 0
         assert (tmp_path / "specs").exists()
