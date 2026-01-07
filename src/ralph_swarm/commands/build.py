@@ -130,7 +130,11 @@ def run_single_worker(
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show Claude output in real-time")
 @click.option("--once", is_flag=True, help="Run single iteration instead of looping")
-@click.option("--auto-shutdown", is_flag=True, help="Shutdown when no work remains")
+@click.option(
+    "--auto-shutdown/--no-auto-shutdown",
+    default=True,
+    help="Shutdown when no work remains (default: enabled)",
+)
 @click.option("--idle-limit", default=3, help="Idle iterations before auto-shutdown")
 @click.option("--dry-run", is_flag=True, help="Show prompt without executing")
 def build_cmd(
