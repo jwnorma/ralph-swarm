@@ -284,6 +284,8 @@ This project uses [beads](https://github.com/steveyegge/beads) for issue trackin
 - `bd ready` - Show issues ready to work on
 - `bd create "title"` - Create new issue
 - `bd close <id>` - Close an issue
+
+**Note:** Do NOT create an AGENTS.md file. Workflow context is loaded via `bd prime`.
 """
 
     claude_md_file = project_path / "CLAUDE.md"
@@ -312,6 +314,9 @@ Thumbs.db
 # Project
 .env
 *.log
+
+# Beads workflow - AGENTS.md is redundant (use bd prime instead)
+AGENTS.md
 """
 
     gitignore_file = project_path / ".gitignore"
