@@ -185,11 +185,11 @@ def specify_cmd(
 
     # Load appropriate prompt
     if mode == "full":
-        prompt_template = load_prompt("specify_full")
+        prompt_template = load_prompt("system/specify_full")
     elif mode == "initial":
-        prompt_template = load_prompt("specify_initial")
+        prompt_template = load_prompt("system/specify_initial")
     else:
-        prompt_template = load_prompt("specify_incremental")
+        prompt_template = load_prompt("system/specify_incremental")
 
     # Substitute variables
     prompt = prompt_template.replace("{prior_art_section}", prior_art_section)

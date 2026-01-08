@@ -3,13 +3,16 @@
 from pathlib import Path
 
 PROMPTS_DIR = Path(__file__).parent
+AGENTS_DIR = PROMPTS_DIR / "agents"
+SYSTEM_DIR = PROMPTS_DIR / "system"
 
 
 def load_prompt(name: str) -> str:
     """Load a prompt file by name.
 
     Args:
-        name: Prompt name (without .md extension)
+        name: Prompt name (without .md extension), can include subdirectory
+              e.g., "system/plan" or "agents/code-reviewer"
 
     Returns:
         Prompt content as string

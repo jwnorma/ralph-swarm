@@ -156,7 +156,7 @@ def init_cmd() -> None:
 
     # Load and write code-reviewer subagent
     code_reviewer_content = load_prompt_with_vars(
-        "code-reviewer",
+        "agents/code-reviewer",
         project_name=project_name,
         objective=objective,
         tech_stack=tech_stack,
@@ -167,7 +167,7 @@ def init_cmd() -> None:
 
     # Load and write are-we-done subagent
     are_we_done_content = load_prompt_with_vars(
-        "are-we-done",
+        "agents/are-we-done",
         project_name=project_name,
     )
     are_we_done_file = agents_dir / "are-we-done.md"
@@ -176,7 +176,7 @@ def init_cmd() -> None:
 
     # Load and write adr subagent
     adr_content = load_prompt_with_vars(
-        "adr",
+        "agents/adr",
         project_name=project_name,
     )
     adr_file = agents_dir / "adr.md"

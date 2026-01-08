@@ -85,7 +85,7 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
         console.print()
 
     # Load prompt
-    plan_prompt = load_prompt("plan")
+    plan_prompt = load_prompt("system/plan")
 
     if dry_run:
         console.print("[bold]Prompt that would be sent:[/bold]")

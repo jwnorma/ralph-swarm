@@ -23,7 +23,7 @@ console = Console()
 
 def get_worker_prompt(worker_id: str) -> str:
     """Generate worker-specific prompt."""
-    return load_prompt_with_vars("build", worker_id=worker_id)
+    return load_prompt_with_vars("system/build", worker_id=worker_id)
 
 
 def get_work_status(cwd: Path) -> dict:
