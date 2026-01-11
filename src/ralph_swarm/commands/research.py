@@ -144,7 +144,15 @@ def research_cmd(
         )
     )
 
+Wrap the Confirm.ask() in a try-except:
+
+try:
     if not Confirm.ask("\n[bold]Ready to start?[/bold]"):
+        console.print("[yellow]Cancelled[/yellow]")
+        return
+except KeyboardInterrupt:
+    console.print("\n[yellow]Cancelled[/yellow]")
+    return
         console.print("[yellow]Cancelled[/yellow]")
         return
 
