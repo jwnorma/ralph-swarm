@@ -164,7 +164,12 @@ def research_cmd(
 
     try:
         result = subprocess.run(cmd, cwd=cwd)  # noqa: S603
+Add validation for the model parameter:
 
+ALLOWED_MODELS = ['sonnet', 'opus', 'haiku']
+if model not in ALLOWED_MODELS:
+    console.print(f"[red]Invalid model. Choose from: {', '.join(ALLOWED_MODELS)}[/red]")
+    sys.exit(1)
         if result.returncode != 0:
             console.print("[red]Session ended with error[/red]")
             sys.exit(1)
