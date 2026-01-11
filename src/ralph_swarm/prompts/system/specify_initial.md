@@ -6,6 +6,7 @@ You are helping define the initial V0 specification for a new project.
 
 **Read first:**
 - CLAUDE.md for project objective and tech stack
+- Any research docs in `docs/research/` (technology evaluations, recommendations)
 - Any prior art references provided below
 
 {prior_art_section}
