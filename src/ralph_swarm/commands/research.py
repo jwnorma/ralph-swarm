@@ -50,7 +50,15 @@ def gather_research_context() -> dict:
     console.print(
         "[dim](e.g., 'authentication libraries', 'state management', 'MCP servers')[/dim]\n"
     )
+Add KeyboardInterrupt handling to gather_research_context():
 
+try:
+    topic = Prompt.ask("Topic")
+    # ... rest of the function
+    return {"topic": topic, "goal": goal}
+except KeyboardInterrupt:
+    console.print("\n[yellow]Cancelled[/yellow]")
+    sys.exit(0)
     topic = Prompt.ask("Topic")
 
     console.print("\n[bold]Research Goal[/bold]")
