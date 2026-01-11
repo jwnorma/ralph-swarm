@@ -1,5 +1,4 @@
 #!/bin/bash
-# Ralph Swarm build script
 
 set -e
 
