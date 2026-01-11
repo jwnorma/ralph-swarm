@@ -329,9 +329,10 @@ AGENTS.md
         Panel.fit(
             "[green]Project initialized successfully![/green]\n\n"
             "Next steps:\n"
-            "  1. Run [bold]ralph specify[/bold] to define V0 specs\n"
-            "  2. Run [bold]ralph plan[/bold] to create epics and stories\n"
-            "  3. Run [bold]ralph build[/bold] to start implementation",
+            "  1. Run [bold]ralph research[/bold] to research technologies [dim](optional)[/dim]\n"
+            "  2. Run [bold]ralph specify[/bold] to define V0 specs\n"
+            "  3. Run [bold]ralph plan[/bold] to create epics and stories\n"
+            "  4. Run [bold]ralph build[/bold] to start implementation",
             title="Done",
         )
     )

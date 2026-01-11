@@ -26,6 +26,9 @@ mkdir my-project && cd my-project
 # Initialize the project
 ralph init
 
+# Research technologies and best practices (optional)
+ralph research
+
 # Define V0 specifications interactively
 ralph specify
 
@@ -43,26 +46,26 @@ ralph status
 
 ## Workflow Guide
 
-Ralph Swarm follows a four-stage workflow that takes a project from idea to implementation. Each stage builds on the previous one, creating a structured pipeline for autonomous development.
+Ralph Swarm follows a five-stage workflow that takes a project from idea to implementation. Each stage builds on the previous one, creating a structured pipeline for autonomous development.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         RALPH SWARM WORKFLOW                            │
-└─────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                              RALPH SWARM WORKFLOW                                  │
+└───────────────────────────────────────────────────────────────────────────────────┘
 
-    ┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐
-    │   INIT   │ ──▶  │ SPECIFY  │ ──▶  │   PLAN   │ ──▶  │  BUILD   │
-    └──────────┘      └──────────┘      └──────────┘      └──────────┘
-         │                 │                 │                 │
-         ▼                 ▼                 ▼                 ▼
-    Project setup    Spec documents     Beads issues      Working code
-    CLAUDE.md        in specs/          (epics/tasks)     Git commits
-    Subagents        Review rules       Dependencies      ADRs
+    ┌────────┐     ┌──────────┐     ┌─────────┐     ┌────────┐     ┌────────┐
+    │  INIT  │ ──▶ │ RESEARCH │ ──▶ │ SPECIFY │ ──▶ │  PLAN  │ ──▶ │ BUILD  │
+    └────────┘     └──────────┘     └─────────┘     └────────┘     └────────┘
+         │              │                │               │              │
+         ▼              ▼                ▼               ▼              ▼
+    Project setup   Research docs   Spec documents   Beads issues   Working code
+    CLAUDE.md       docs/research/  in specs/        (epics/tasks)  Git commits
+    Subagents       (optional)      Review rules     Dependencies   ADRs
 
-                                                    ┌─────────────────┐
-                                                    │  STATUS/CLEANUP │
-                                                    │   (anytime)     │
-                                                    └─────────────────┘
+                                                              ┌─────────────────┐
+                                                              │  STATUS/CLEANUP │
+                                                              │   (anytime)     │
+                                                              └─────────────────┘
 ```
 
 ---
@@ -138,6 +141,102 @@ What tech stack will you use?
 │   1. Run ralph specify to define V0 specs   │
 │   2. Run ralph plan to create epics         │
 │   3. Run ralph build to start building      │
+╰──────────────────────────────────────────────╯
+```
+
+---
+
+### Stage 1.5: Research (Optional)
+
+**Command:** `ralph research`
+
+**Purpose:** Research technologies, libraries, tools, and best practices before defining specifications. Useful for complex projects where you need to evaluate options.
+
+#### What It Does
+
+1. Prompts for research topic and goal
+2. Launches an interactive Claude session with web search
+3. Searches for relevant documentation, blog posts, and comparisons
+4. Creates research documents in `docs/research/`
+5. Summarizes findings and recommendations
+
+#### Inputs
+
+| Input | Source | Description |
+|-------|--------|-------------|
+| `CLAUDE.md` | Project root | Project context for relevant research |
+| Topic | User prompt | What to research (e.g., "authentication libraries") |
+| Goal | User prompt | What to learn/decide (e.g., "choose best option") |
+
+#### Outputs
+
+| Output | Location | Description |
+|--------|----------|-------------|
+| Research docs | `docs/research/` | Findings, comparisons, recommendations |
+
+#### Research Document Structure
+
+```markdown
+# Research: <Topic>
+
+## Goal
+What we wanted to learn or decide.
+
+## Summary
+Key findings in 2-3 sentences.
+
+## Options Evaluated
+### Option 1: <Name>
+- Pros: ...
+- Cons: ...
+- Links: ...
+
+## Recommendations
+Based on our tech stack and goals...
+
+## Sources
+- [Title](url) - Description
+```
+
+#### Example Session
+
+```
+$ ralph research
+
+╭──────────────────────────────────────────────╮
+│ Ralph Swarm - Research Mode                  │
+│ Model: opus                                  │
+╰──────────────────────────────────────────────╯
+
+Research Topic
+What do you want to research?
+Topic: authentication libraries for Python APIs
+
+Research Goal
+What do you want to learn or decide?
+Goal: choose the best auth library for our FastAPI backend
+
+How this works:
+1. An interactive Claude session will start
+2. Claude will search the web for relevant information
+3. You can guide the research and ask follow-up questions
+4. Research findings will be saved to docs/research/
+
+Ready to start? [y/n]: y
+
+# Claude session begins...
+# After completion:
+
+New research created:
+  ● docs/research/authentication-libraries-for-python-apis.md
+
+╭──────────────────────────────────────────────╮
+│ Research session complete!                   │
+│                                              │
+│ Next steps:                                  │
+│   1. Review research: ls docs/research/      │
+│   2. Define specs: ralph specify             │
+│   3. Run planning: ralph plan                │
 ╰──────────────────────────────────────────────╯
 ```
 
@@ -553,13 +652,19 @@ ralph init
 #   Problem: "Quick weather checks without opening a browser"
 #   Tech stack: "Python, Click, httpx, Rich"
 
-# 3. Specify V0
+# 3. Research (optional but recommended for complex projects)
+ralph research
+# Topic: "weather APIs for Python"
+# Goal: "choose best free weather API"
+# Creates: docs/research/weather-apis-for-python.md
+
+# 4. Specify V0
 ralph specify
 # Work with Claude to create:
 #   - specs/v0-cli.md (commands, output format)
 #   - specs/v0-weather-api.md (API integration)
 
-# 4. Plan implementation
+# 5. Plan implementation
 ralph plan
 # Creates tasks like:
 #   - Set up project structure
@@ -569,14 +674,14 @@ ralph plan
 #   - Add error handling
 #   - Document usage
 
-# 5. Build with workers
+# 6. Build with workers
 ralph build --workers 2 --auto-shutdown
 # Workers implement, test, and commit each task
 
-# 6. Check progress
+# 7. Check progress
 ralph status
 
-# 7. Add a feature later
+# 8. Add a feature later
 ralph specify
 # Choose "Add a new feature"
 # Define the feature spec
@@ -597,6 +702,18 @@ Initialize a ralph-swarm project in the current directory:
 - Create CLAUDE.md scaffold
 
 Fails fast if the project is already initialized.
+
+### `ralph research`
+
+Research technologies, libraries, and best practices interactively:
+- Searches web for documentation, blog posts, comparisons
+- Evaluates options against project tech stack
+- Creates research documents in `docs/research/`
+
+Options:
+- `--model, -m` - Model to use (sonnet, opus, haiku)
+- `--verbose, -v` - Show real-time output
+- `--dry-run` - Show prompt without executing
 
 ### `ralph specify`
 

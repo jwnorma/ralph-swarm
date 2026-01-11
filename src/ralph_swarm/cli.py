@@ -3,7 +3,7 @@
 import click
 from rich.console import Console
 
-from ralph_swarm.commands import build, cleanup, init, plan, specify, status
+from ralph_swarm.commands import build, cleanup, init, plan, research, specify, status
 
 console = Console()
 
@@ -14,10 +14,11 @@ def main() -> None:
     """Ralph Swarm - AI-powered autonomous development orchestrator.
 
     Phases:
-      init    - Interactive project setup (objective, tech stack)
-      specify - Build specifications interactively (V0 scope)
-      plan    - Planning mode (create epics, stories from specs)
-      build   - Build mode (implement issues with worker swarm)
+      init     - Interactive project setup (objective, tech stack)
+      research - Research technologies and best practices (optional)
+      specify  - Build specifications interactively (V0 scope)
+      plan     - Planning mode (create epics, stories from specs)
+      build    - Build mode (implement issues with worker swarm)
 
     Utilities:
       status  - Show project progress and worker status
@@ -27,6 +28,7 @@ def main() -> None:
 
 
 main.add_command(init.init_cmd, name="init")
+main.add_command(research.research_cmd, name="research")
 main.add_command(specify.specify_cmd, name="specify")
 main.add_command(plan.plan_cmd, name="plan")
 main.add_command(build.build_cmd, name="build")
