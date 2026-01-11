@@ -192,7 +192,11 @@ if model not in ALLOWED_MODELS:
 
     except FileNotFoundError:
         console.print("[red]Claude CLI not found. Is it installed?[/red]")
-        sys.exit(1)
+Exit after interrupt or return early:
+
+except KeyboardInterrupt:
+    console.print("\n[yellow]Session interrupted[/yellow]")
+    sys.exit(0)  # or return
     except KeyboardInterrupt:
         console.print("\n[yellow]Session interrupted[/yellow]")
 
