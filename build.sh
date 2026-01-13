@@ -62,14 +62,32 @@ cmd_build() {
 
 cmd_publish_local() {
     echo -e "${GREEN}Building and installing locally...${NC}"
+
+    # Clean build artifacts to avoid conflicts with old builds
+    cmd_clean
+
+    # Get current version and append timestamp
+    ORIGINAL_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+    TIMESTAMP=$(date +%Y%m%d%H%M%S)
+    LOCAL_VERSION="${ORIGINAL_VERSION}.dev${TIMESTAMP}"
+
+    echo -e "${YELLOW}Setting local version: ${LOCAL_VERSION}${NC}"
+
+    # Temporarily update version in pyproject.toml
+    sed -i.bak "s/^version = \".*\"/version = \"${LOCAL_VERSION}\"/" pyproject.toml
+
+    # Build with timestamped version
     uv build
+
+    # Restore original version
+    mv pyproject.toml.bak pyproject.toml
 
     # Install the wheel globally so uvx can find it
     echo -e "${GREEN}Installing to user site-packages...${NC}"
     uv tool install --force dist/*.whl
 
     echo ""
-    echo -e "${GREEN}Installed! You can now run:${NC}"
+    echo -e "${GREEN}Installed version ${LOCAL_VERSION}! You can now run:${NC}"
     echo "  ralph --help"
     echo ""
     echo "Or with uvx:"

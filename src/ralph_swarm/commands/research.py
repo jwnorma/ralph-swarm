@@ -50,26 +50,23 @@ def gather_research_context() -> dict:
     console.print(
         "[dim](e.g., 'authentication libraries', 'state management', 'MCP servers')[/dim]\n"
     )
-Add KeyboardInterrupt handling to gather_research_context():
 
-try:
-    topic = Prompt.ask("Topic")
-    # ... rest of the function
-    return {"topic": topic, "goal": goal}
-except KeyboardInterrupt:
-    console.print("\n[yellow]Cancelled[/yellow]")
-    sys.exit(0)
-    topic = Prompt.ask("Topic")
+    try:
+        topic = Prompt.ask("Topic")
 
-    console.print("\n[bold]Research Goal[/bold]")
-    console.print("[dim]What do you want to learn or decide?[/dim]")
-    console.print(
-        "[dim](e.g., 'choose best library for our use case', 'understand best practices')[/dim]\n"
-    )
+        console.print("\n[bold]Research Goal[/bold]")
+        console.print("[dim]What do you want to learn or decide?[/dim]")
+        console.print(
+            "[dim](e.g., 'choose best library for our use case', "
+            "'understand best practices')[/dim]\n"
+        )
 
-    goal = Prompt.ask("Goal")
+        goal = Prompt.ask("Goal")
 
-    return {"topic": topic, "goal": goal}
+        return {"topic": topic, "goal": goal}
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled[/yellow]")
+        sys.exit(0)
 
 
 @click.command("research")
@@ -152,16 +149,12 @@ def research_cmd(
         )
     )
 
-Wrap the Confirm.ask() in a try-except:
-
-try:
-    if not Confirm.ask("\n[bold]Ready to start?[/bold]"):
-        console.print("[yellow]Cancelled[/yellow]")
-        return
-except KeyboardInterrupt:
-    console.print("\n[yellow]Cancelled[/yellow]")
-    return
-        console.print("[yellow]Cancelled[/yellow]")
+    try:
+        if not Confirm.ask("\n[bold]Ready to start?[/bold]"):
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Cancelled[/yellow]")
         return
 
     console.print()
@@ -180,23 +173,13 @@ except KeyboardInterrupt:
 
     try:
         result = subprocess.run(cmd, cwd=cwd)  # noqa: S603
-Add validation for the model parameter:
-
-ALLOWED_MODELS = ['sonnet', 'opus', 'haiku']
-if model not in ALLOWED_MODELS:
-    console.print(f"[red]Invalid model. Choose from: {', '.join(ALLOWED_MODELS)}[/red]")
-    sys.exit(1)
         if result.returncode != 0:
             console.print("[red]Session ended with error[/red]")
             sys.exit(1)
 
     except FileNotFoundError:
         console.print("[red]Claude CLI not found. Is it installed?[/red]")
-Exit after interrupt or return early:
-
-except KeyboardInterrupt:
-    console.print("\n[yellow]Session interrupted[/yellow]")
-    sys.exit(0)  # or return
+        sys.exit(1)
     except KeyboardInterrupt:
         console.print("\n[yellow]Session interrupted[/yellow]")
 

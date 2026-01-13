@@ -3,12 +3,13 @@
 ## Context Loading
 
 1. Run `bd prime` to load current workflow context
-2. Run `bd ready --unassigned --json` to see available issues
-3. Study CLAUDE.md for build/test instructions
+2. Study CLAUDE.md for build/test instructions
 
 ## Your Task
 
-1. **Pick ONE unassigned issue:**
+**NOTE:** If you see "ASSIGNED ISSUE: <id>" above, skip step 1 - you already have an assigned issue. Proceed directly to step 2.
+
+1. **Pick ONE unassigned issue (SKIP if already assigned):**
    - Run `bd ready --unassigned --json` to see available work
    - Prefer actionable tasks (type: task, bug, feature) over epics
    - If only epics: pick one to decompose into tasks

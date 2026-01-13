@@ -21,9 +21,17 @@ from ralph_swarm.prompts import load_prompt_with_vars
 console = Console()
 
 
-def get_worker_prompt(worker_id: str) -> str:
+def get_worker_prompt(worker_id: str, issue_id: str | None = None) -> str:
     """Generate worker-specific prompt."""
-    return load_prompt_with_vars("system/build", worker_id=worker_id)
+    prompt = load_prompt_with_vars("system/build", worker_id=worker_id)
+    if issue_id:
+        prompt += (
+            f"\n\n**ASSIGNED ISSUE:** {issue_id}\n"
+            f"You have already been assigned issue {issue_id}. "
+            f"Run `bd show {issue_id}` to see details and implement it.\n"
+            "Skip the claiming step - proceed directly to implementation."
+        )
+    return prompt
 
 
 def get_work_status(cwd: Path) -> dict:
@@ -55,9 +63,10 @@ def run_single_worker(
     verbose: bool,
     cwd: Path,
     log_file: Path | None = None,
+    issue_id: str | None = None,
 ) -> int:
     """Run a single worker iteration. Returns: 0=no work, 1=worked, 2=error."""
-    prompt = get_worker_prompt(worker_id)
+    prompt = get_worker_prompt(worker_id, issue_id)
 
     # Set BD_ACTOR environment for atomic claims
     env = os.environ.copy()
@@ -65,16 +74,12 @@ def run_single_worker(
 
     cmd = [
         "claude",
-        "--print",
         "--dangerously-skip-permissions",
-        "--model",
-        model,
+        "--model", model,
     ]
 
     if verbose:
         cmd.extend(["--output-format", "stream-json", "--verbose"])
-
-    cmd.append(prompt)
 
     try:
         if log_file:
@@ -85,6 +90,7 @@ def run_single_worker(
 
                 result = subprocess.run(  # noqa: S603
                     cmd,
+                    input=prompt,
                     stdout=f,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -94,12 +100,16 @@ def run_single_worker(
         elif verbose:
             process = subprocess.Popen(  # noqa: S603
                 cmd,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 cwd=cwd,
                 env=env,
             )
+            if process.stdin:
+                process.stdin.write(prompt)
+                process.stdin.close()
             if process.stdout:
                 for line in process.stdout:
                     console.print(line, end="")
@@ -108,6 +118,7 @@ def run_single_worker(
         else:
             result = subprocess.run(  # noqa: S603
                 cmd,
+                input=prompt,
                 capture_output=True,
                 text=True,
                 cwd=cwd,
@@ -269,9 +280,53 @@ def run_single_worker_loop(
                 iteration += 1
                 continue
 
+            # Pick first unassigned issue (prioritized by beads)
+            unassigned_issues = [i for i in status["issues"] if not i.get("assignee")]
+            if not unassigned_issues:
+                console.print("[yellow]No unassigned issues found[/yellow]")
+                time.sleep(5)
+                iteration += 1
+                continue
+
+            issue_id = unassigned_issues[0]["id"]
+
+            # Atomically claim the issue
+            console.print(f"Attempting to claim issue {issue_id}...")
+            subprocess.run(  # noqa: S603, S607
+                ["bd", "update", issue_id, "--status", "in_progress", "--assignee", worker_id],
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+            )
+
+            # Verify claim succeeded
+            verify_result = subprocess.run(  # noqa: S603, S607
+                ["bd", "show", issue_id, "--json"],
+                capture_output=True,
+                text=True,
+                cwd=cwd,
+            )
+
+            try:
+                issue_data = json.loads(verify_result.stdout)
+                claimed_by = issue_data.get("assignee")
+            except (json.JSONDecodeError, KeyError):
+                claimed_by = None
+
+            if claimed_by != worker_id:
+                console.print(
+                    f"[yellow]Failed to claim {issue_id} "
+                    f"(claimed by {claimed_by}), retrying...[/yellow]"
+                )
+                time.sleep(1)
+                iteration += 1
+                continue
+
+            console.print(f"[green]Successfully claimed {issue_id}[/green]")
+
             # Reset idle count and do work
             idle_count = 0
-            result = run_single_worker(worker_id, model, verbose, cwd, log_file)
+            result = run_single_worker(worker_id, model, verbose, cwd, log_file, issue_id)
 
             if result == 2:
                 console.print("[red]Worker encountered error[/red]")
@@ -304,6 +359,7 @@ def run_swarm(
     worker_scripts: list[Path] = []
 
     # Create worker scripts
+    verbose_flags = " --output-format stream-json --verbose" if verbose else ""
     for i in range(1, workers + 1):
         worker_id = f"ralph-{i}"
         script_path = log_dir / f"worker-{i}.sh"
@@ -313,16 +369,20 @@ def run_swarm(
 export BD_ACTOR="{worker_id}"
 cd "{cwd}"
 
+# Random initial delay to reduce startup contention (0-3 seconds)
+sleep $((RANDOM % 4))
+
 iteration=1
 idle_count=0
 
 while true; do
     echo "=== Iteration $iteration - $(date) ===" >> "{log_path}"
 
-    # Check for work
-    unassigned=$(bd ready --unassigned --json 2>/dev/null | grep -c '"id"' || echo "0")
+    # Get unassigned issues as JSON
+    unassigned_json=$(bd ready --unassigned --json 2>/dev/null)
+    unassigned_count=$(echo "$unassigned_json" | grep -c '"id"' || echo "0")
 
-    if [ "$unassigned" -eq 0 ]; then
+    if [ "$unassigned_count" -eq 0 ]; then
         ((idle_count++))
         echo "No unassigned work (idle: $idle_count/{idle_limit})" >> "{log_path}"
 
@@ -336,10 +396,43 @@ while true; do
         continue
     fi
 
+    # Pick first unassigned issue (prioritized by beads)
+    issue_id=$(echo "$unassigned_json" | jq -r '.[0].id' 2>/dev/null)
+
+    if [ -z "$issue_id" ] || [ "$issue_id" = "null" ]; then
+        echo "Failed to parse issue ID, retrying..." >> "{log_path}"
+        sleep 2
+        ((iteration++))
+        continue
+    fi
+
+    # Atomically claim the issue
+    echo "Attempting to claim issue $issue_id..." >> "{log_path}"
+    bd update "$issue_id" --status in_progress --assignee "{worker_id}" >> "{log_path}" 2>&1
+
+    # Verify claim succeeded
+    claimed_by=$(bd show "$issue_id" --json 2>/dev/null | jq -r '.assignee' 2>/dev/null)
+
+    if [ "$claimed_by" != "{worker_id}" ]; then
+        echo "Failed to claim $issue_id (claimed by $claimed_by), retrying..." >> "{log_path}"
+        sleep $((RANDOM % 3))  # Random backoff 0-2 seconds
+        ((iteration++))
+        continue
+    fi
+
+    echo "Successfully claimed $issue_id" >> "{log_path}"
     idle_count=0
 
-    claude --print --dangerously-skip-permissions --model {model} \\
-        '{get_worker_prompt(worker_id)}' >> "{log_path}" 2>&1
+    # Launch Claude with the pre-assigned issue
+    cat << PROMPT_EOF | claude --dangerously-skip-permissions \\
+        --model {model}{verbose_flags} >> "{log_path}" 2>&1
+{get_worker_prompt(worker_id)}
+
+**ASSIGNED ISSUE:** $issue_id
+You have already been assigned issue $issue_id.
+Run \\`bd show $issue_id\\` to see details and implement it.
+Skip the claiming step - proceed directly to implementation.
+PROMPT_EOF
 
     ((iteration++))
     sleep 2

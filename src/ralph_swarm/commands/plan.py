@@ -100,27 +100,27 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
 
         cmd = [
             "claude",
-            "--print",
             "--dangerously-skip-permissions",
-            "--model",
-            model,
+            "--model", model,
         ]
 
         if verbose:
             cmd.extend(["--output-format", "stream-json", "--verbose"])
-
-        cmd.append(plan_prompt)
 
         try:
             if verbose:
                 # Stream output in real-time
                 process = subprocess.Popen(  # noqa: S603
                     cmd,
+                    stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     cwd=cwd,
                 )
+                if process.stdin:
+                    process.stdin.write(plan_prompt)
+                    process.stdin.close()
                 if process.stdout:
                     for line in process.stdout:
                         console.print(line, end="")
@@ -130,6 +130,7 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
                 with Live(Spinner("dots", text="Planning..."), console=console):
                     result = subprocess.run(  # noqa: S603
                         cmd,
+                        input=plan_prompt,
                         capture_output=True,
                         text=True,
                         cwd=cwd,
