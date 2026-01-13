@@ -283,7 +283,15 @@ def run_single_worker_loop(
             # Pick first unassigned issue (prioritized by beads)
             unassigned_issues = [i for i in status["issues"] if not i.get("assignee")]
             if not unassigned_issues:
-                console.print("[yellow]No unassigned issues found[/yellow]")
+                idle_count += 1
+                console.print(
+                    f"[yellow]No unassigned issues found (idle: {idle_count}/{idle_limit})[/yellow]"
+                )
+
+                if auto_shutdown and idle_count >= idle_limit:
+                    console.print("[green]Auto-shutdown: no work remaining[/green]")
+                    break
+
                 time.sleep(5)
                 iteration += 1
                 continue
@@ -309,8 +317,11 @@ def run_single_worker_loop(
 
             try:
                 issue_data = json.loads(verify_result.stdout)
+                # bd show may return a list or a dict
+                if isinstance(issue_data, list):
+                    issue_data = issue_data[0] if issue_data else {}
                 claimed_by = issue_data.get("assignee")
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError, IndexError):
                 claimed_by = None
 
             if claimed_by != worker_id:
@@ -380,7 +391,7 @@ while true; do
 
     # Get unassigned issues as JSON
     unassigned_json=$(bd ready --unassigned --json 2>/dev/null)
-    unassigned_count=$(echo "$unassigned_json" | grep -c '"id"' || echo "0")
+    unassigned_count=$(echo "$unassigned_json" | jq 'length' 2>/dev/null || echo "0")
 
     if [ "$unassigned_count" -eq 0 ]; then
         ((idle_count++))
@@ -397,9 +408,9 @@ while true; do
     fi
 
     # Pick first unassigned issue (prioritized by beads)
-    issue_id=$(echo "$unassigned_json" | jq -r '.[0].id' 2>/dev/null)
+    issue_id=$(echo "$unassigned_json" | jq -r '.[0].id // empty' 2>/dev/null)
 
-    if [ -z "$issue_id" ] || [ "$issue_id" = "null" ]; then
+    if [ -z "$issue_id" ]; then
         echo "Failed to parse issue ID, retrying..." >> "{log_path}"
         sleep 2
         ((iteration++))
@@ -410,8 +421,9 @@ while true; do
     echo "Attempting to claim issue $issue_id..." >> "{log_path}"
     bd update "$issue_id" --status in_progress --assignee "{worker_id}" >> "{log_path}" 2>&1
 
-    # Verify claim succeeded
-    claimed_by=$(bd show "$issue_id" --json 2>/dev/null | jq -r '.assignee' 2>/dev/null)
+    # Verify claim succeeded (handle both dict and list responses)
+    claimed_by=$(bd show "$issue_id" --json 2>/dev/null | \\
+        jq -r 'if type == "array" then .[0].assignee else .assignee end' 2>/dev/null)
 
     if [ "$claimed_by" != "{worker_id}" ]; then
         echo "Failed to claim $issue_id (claimed by $claimed_by), retrying..." >> "{log_path}"
