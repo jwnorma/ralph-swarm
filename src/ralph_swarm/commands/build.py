@@ -21,6 +21,71 @@ from ralph_swarm.prompts import load_prompt_with_vars
 console = Console()
 
 
+def create_worktree(base_dir: Path, worker_id: str) -> Path:
+    """Create a git worktree for the worker.
+
+    Returns the path to the worktree directory.
+    """
+    worktree_dir = base_dir / ".ralph-worktrees" / worker_id
+
+    # Remove if exists (from previous run)
+    if worktree_dir.exists():
+        console.print(f"[yellow]Removing existing worktree: {worktree_dir}[/yellow]")
+        subprocess.run(  # noqa: S603, S607
+            ["git", "worktree", "remove", str(worktree_dir), "--force"],
+            capture_output=True,
+            cwd=base_dir,
+        )
+
+    # Create worktree
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "worktree", "add", str(worktree_dir), "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+
+    if result.returncode != 0:
+        console.print(f"[red]Failed to create worktree: {result.stderr}[/red]")
+        raise RuntimeError(f"Failed to create worktree for {worker_id}")
+
+    return worktree_dir
+
+
+def cleanup_worktrees(base_dir: Path) -> None:
+    """Clean up all ralph worktrees."""
+    worktree_base = base_dir / ".ralph-worktrees"
+    if not worktree_base.exists():
+        return
+
+    # List all worktrees
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "worktree", "list", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+
+    if result.returncode != 0:
+        return
+
+    # Parse worktree list and remove ralph worktrees
+    for line in result.stdout.split("\n"):
+        if line.startswith("worktree "):
+            worktree_path = line.split(" ", 1)[1]
+            if ".ralph-worktrees" in worktree_path:
+                console.print(f"[dim]Removing worktree: {worktree_path}[/dim]")
+                subprocess.run(  # noqa: S603, S607
+                    ["git", "worktree", "remove", worktree_path, "--force"],
+                    capture_output=True,
+                    cwd=base_dir,
+                )
+
+    # Remove directory if empty
+    if worktree_base.exists() and not any(worktree_base.iterdir()):
+        worktree_base.rmdir()
+
+
 def get_worker_prompt(worker_id: str, issue_id: str | None = None) -> str:
     """Generate worker-specific prompt."""
     prompt = load_prompt_with_vars("system/build", worker_id=worker_id)
@@ -148,6 +213,13 @@ def run_single_worker(
 )
 @click.option("--idle-limit", default=3, help="Idle iterations before auto-shutdown")
 @click.option("--dry-run", is_flag=True, help="Show prompt without executing")
+@click.option(
+    "--use-worktrees",
+    default=True,
+    type=bool,
+    show_default=True,
+    help="Use git worktrees for worker isolation",
+)
 def build_cmd(
     workers: int,
     model: str,
@@ -156,6 +228,7 @@ def build_cmd(
     auto_shutdown: bool,
     idle_limit: int,
     dry_run: bool,
+    use_worktrees: bool,
 ) -> None:
     """Run build mode with worker swarm.
 
@@ -212,31 +285,42 @@ def build_cmd(
     else:
         latest_link.symlink_to(log_dir.name)
 
-    console.print(f"[dim]Logs: {log_dir}[/dim]\n")
+    console.print(f"[dim]Logs: {log_dir}[/dim]")
+    if use_worktrees:
+        console.print("[dim]Using git worktrees for worker isolation[/dim]")
+    console.print()
 
-    if workers == 1:
-        # Single worker mode
-        run_single_worker_loop(
-            worker_id="ralph-1",
-            model=model,
-            verbose=verbose,
-            once=once,
-            auto_shutdown=auto_shutdown,
-            idle_limit=idle_limit,
-            cwd=cwd,
-            log_file=log_dir / "ralph-1.log" if not verbose else None,
-        )
-    else:
-        # Swarm mode
-        run_swarm(
-            workers=workers,
-            model=model,
-            verbose=verbose,
-            auto_shutdown=auto_shutdown,
-            idle_limit=idle_limit,
-            cwd=cwd,
-            log_dir=log_dir,
-        )
+    try:
+        if workers == 1:
+            # Single worker mode
+            run_single_worker_loop(
+                worker_id="ralph-1",
+                model=model,
+                verbose=verbose,
+                once=once,
+                auto_shutdown=auto_shutdown,
+                idle_limit=idle_limit,
+                cwd=cwd,
+                log_file=log_dir / "ralph-1.log" if not verbose else None,
+                use_worktree=use_worktrees,
+            )
+        else:
+            # Swarm mode
+            run_swarm(
+                workers=workers,
+                model=model,
+                verbose=verbose,
+                auto_shutdown=auto_shutdown,
+                idle_limit=idle_limit,
+                cwd=cwd,
+                log_dir=log_dir,
+                use_worktrees=use_worktrees,
+            )
+    finally:
+        # Clean up worktrees on exit
+        if use_worktrees:
+            console.print("\n[dim]Cleaning up worktrees...[/dim]")
+            cleanup_worktrees(cwd)
 
 
 def run_single_worker_loop(
@@ -248,10 +332,18 @@ def run_single_worker_loop(
     idle_limit: int,
     cwd: Path,
     log_file: Path | None,
+    use_worktree: bool = False,
 ) -> None:
     """Run single worker in a loop."""
     iteration = 1
     idle_count = 0
+
+    # Create worktree if requested
+    if use_worktree:
+        work_dir = create_worktree(cwd, worker_id)
+        console.print(f"[green]Created worktree: {work_dir}[/green]")
+    else:
+        work_dir = cwd
 
     console.print(f"[green]Starting worker {worker_id}...[/green]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
@@ -263,7 +355,7 @@ def run_single_worker_loop(
             )
 
             # Check for available work
-            status = get_work_status(cwd)
+            status = get_work_status(work_dir)
             if status["unassigned"] == 0:
                 idle_count += 1
                 console.print(
@@ -304,7 +396,7 @@ def run_single_worker_loop(
                 ["bd", "update", issue_id, "--status", "in_progress", "--assignee", worker_id],
                 capture_output=True,
                 text=True,
-                cwd=cwd,
+                cwd=work_dir,
             )
 
             # Verify claim succeeded
@@ -312,7 +404,7 @@ def run_single_worker_loop(
                 ["bd", "show", issue_id, "--json"],
                 capture_output=True,
                 text=True,
-                cwd=cwd,
+                cwd=work_dir,
             )
 
             try:
@@ -337,7 +429,7 @@ def run_single_worker_loop(
 
             # Reset idle count and do work
             idle_count = 0
-            result = run_single_worker(worker_id, model, verbose, cwd, log_file, issue_id)
+            result = run_single_worker(worker_id, model, verbose, work_dir, log_file, issue_id)
 
             if result == 2:
                 console.print("[red]Worker encountered error[/red]")
@@ -361,6 +453,7 @@ def run_swarm(
     idle_limit: int,
     cwd: Path,
     log_dir: Path,
+    use_worktrees: bool = False,
 ) -> None:
     """Run multiple workers in parallel."""
     console.print(f"[green]Spawning {workers} workers...[/green]")
@@ -369,6 +462,13 @@ def run_swarm(
     processes: list[subprocess.Popen] = []
     worker_scripts: list[Path] = []
 
+    # Create worktrees if requested
+    if use_worktrees:
+        for i in range(1, workers + 1):
+            worker_id = f"ralph-{i}"
+            worktree_dir = create_worktree(cwd, worker_id)
+            console.print(f"[green]  Created worktree for {worker_id}: {worktree_dir}[/green]")
+
     # Create worker scripts
     verbose_flags = " --output-format stream-json --verbose" if verbose else ""
     for i in range(1, workers + 1):
@@ -376,9 +476,12 @@ def run_swarm(
         script_path = log_dir / f"worker-{i}.sh"
         log_path = log_dir / f"ralph-{i}.log"
 
+        # Determine working directory
+        work_dir = cwd / ".ralph-worktrees" / worker_id if use_worktrees else cwd
+
         script_content = f"""#!/bin/bash
 export BD_ACTOR="{worker_id}"
-cd "{cwd}"
+cd "{work_dir}"
 
 # Random initial delay to reduce startup contention (0-3 seconds)
 sleep $((RANDOM % 4))
