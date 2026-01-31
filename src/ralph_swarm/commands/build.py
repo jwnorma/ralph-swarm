@@ -1,8 +1,11 @@
 """Build command - Build mode with worker swarm support."""
 
 import contextlib
+import fcntl
 import json
+import logging
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -23,6 +26,8 @@ from ralph_swarm.usage import (
     parse_stream_json_usage,
     save_usage,
 )
+
+logger = logging.getLogger(__name__)
 
 console = Console()
 
@@ -90,6 +95,16 @@ def cleanup_worktrees(base_dir: Path) -> None:
     # Remove directory if empty
     if worktree_base.exists() and not any(worktree_base.iterdir()):
         worktree_base.rmdir()
+
+
+def _sanitize_shell_value(value: str) -> str:
+    """Sanitize a value for safe interpolation into a shell script.
+
+    Only allows alphanumeric, hyphens, underscores, and dots.
+    """
+    if not re.match(r"^[a-zA-Z0-9._-]+$", value):
+        raise ValueError(f"Unsafe value for shell interpolation: {value!r}")
+    return value
 
 
 def get_worker_prompt(worker_id: str, issue_id: str | None = None) -> str:
@@ -174,11 +189,11 @@ def run_single_worker(
                 cwd=cwd,
                 env=env,
             )
-            if process.stdin:
-                process.stdin.write(prompt)
-                process.stdin.close()
-            if process.stdout:
-                with open(log_file, "a") as f:
+            assert process.stdin is not None, "Failed to open stdin pipe"
+            process.stdin.write(prompt)
+            process.stdin.close()
+            with open(log_file, "a") as f:
+                if process.stdout:
                     for line in process.stdout:
                         f.write(line)
                         captured_output += line
@@ -194,9 +209,9 @@ def run_single_worker(
                 cwd=cwd,
                 env=env,
             )
-            if process.stdin:
-                process.stdin.write(prompt)
-                process.stdin.close()
+            assert process.stdin is not None, "Failed to open stdin pipe"
+            process.stdin.write(prompt)
+            process.stdin.close()
             if process.stdout:
                 for line in process.stdout:
                     console.print(line, end="")
@@ -235,7 +250,10 @@ def run_single_worker(
         return 1 if result.returncode == 0 else 2
 
     except FileNotFoundError:
-        console.print("[red]Claude CLI not found.[/red]")
+        console.print(f"[red]Claude CLI not found for worker {worker_id}.[/red]")
+        return 2
+    except Exception as e:
+        console.print(f"[red]Error in worker {worker_id}: {e}[/red]")
         return 2
 
 
@@ -574,9 +592,12 @@ def run_swarm(
             console.print(f"[green]  Created worktree for {worker_id}: {worktree_dir}[/green]")
 
     # Create worker scripts — always use stream-json for usage capture
+    # Sanitize model name for shell interpolation
+    safe_model = _sanitize_shell_value(model)
     verbose_flags = " --verbose" if verbose else ""
     for i in range(1, workers + 1):
         worker_id = f"ralph-{i}"
+        safe_worker_id = _sanitize_shell_value(worker_id)
         script_path = log_dir / f"worker-{i}.sh"
         log_path = log_dir / f"ralph-{i}.log"
         usage_path = log_dir / f"ralph-{i}.usage.jsonl"
@@ -585,7 +606,7 @@ def run_swarm(
         work_dir = cwd / ".ralph-worktrees" / worker_id if use_worktrees else cwd
 
         script_content = f"""#!/bin/bash
-export BD_ACTOR="{worker_id}"
+export BD_ACTOR="{safe_worker_id}"
 cd "{work_dir}"
 
 # Random initial delay to reduce startup contention (0-3 seconds)
@@ -627,13 +648,13 @@ while true; do
 
     # Atomically claim the issue
     echo "Attempting to claim issue $issue_id..." >> "{log_path}"
-    bd update "$issue_id" --status in_progress --assignee "{worker_id}" >> "{log_path}" 2>&1
+    bd update "$issue_id" --status in_progress --assignee "{safe_worker_id}" >> "{log_path}" 2>&1
 
     # Verify claim succeeded (handle both dict and list responses)
     claimed_by=$(bd show "$issue_id" --json 2>/dev/null | \\
         jq -r 'if type == "array" then .[0].assignee else .assignee end' 2>/dev/null)
 
-    if [ "$claimed_by" != "{worker_id}" ]; then
+    if [ "$claimed_by" != "{safe_worker_id}" ]; then
         echo "Failed to claim $issue_id (claimed by $claimed_by), retrying..." >> "{log_path}"
         sleep $((RANDOM % 3))  # Random backoff 0-2 seconds
         ((iteration++))
@@ -646,7 +667,7 @@ while true; do
     # Launch Claude with stream-json to capture usage
     start_ts=$(date +%s)
     claude_output=$(cat << PROMPT_EOF | claude --dangerously-skip-permissions \\
-        --model {model} --output-format stream-json{verbose_flags} 2>&1
+        --model {safe_model} --output-format stream-json{verbose_flags} 2>&1
 {get_worker_prompt(worker_id)}
 
 **ASSIGNED ISSUE:** $issue_id
@@ -665,14 +686,14 @@ PROMPT_EOF
     result_line=$(echo "$claude_output" | grep '"type":"result"' | tail -1)
     if [ -n "$result_line" ]; then
         echo "$result_line" | jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S)" \\
-            --arg cmd "build" --arg wid "{worker_id}" --arg iid "$issue_id" \\
+            --arg cmd "build" --arg wid "{safe_worker_id}" --arg iid "$issue_id" \\
             --arg dur "$duration" '
             .usage as $u |
             {{
                 timestamp: $ts,
                 command: $cmd,
                 worker_id: $wid,
-                model: (.model // "{model}"),
+                model: (.model // "{safe_model}"),
                 input_tokens: ($u.input_tokens // 0),
                 output_tokens: ($u.output_tokens // 0),
                 cache_creation_input_tokens: ($u.cache_creation_input_tokens // 0),
@@ -741,12 +762,18 @@ done
         console.print("[green]All workers finished[/green]")
 
         # Aggregate worker usage files into main usage.json
-        _aggregate_swarm_usage(log_dir, cwd / "logs")
+        try:
+            _aggregate_swarm_usage(log_dir, cwd / "logs")
+        except Exception as e:
+            console.print(f"[yellow]Warning: Failed to aggregate usage data: {e}[/yellow]")
 
     except KeyboardInterrupt:
         shutdown(None, None)
         # Still aggregate any usage captured so far
-        _aggregate_swarm_usage(log_dir, cwd / "logs")
+        try:
+            _aggregate_swarm_usage(log_dir, cwd / "logs")
+        except Exception as e:
+            console.print(f"[yellow]Warning: Failed to aggregate usage data: {e}[/yellow]")
 
 
 def _aggregate_swarm_usage(log_dir: Path, logs_dir: Path) -> None:
@@ -769,6 +796,7 @@ def _aggregate_swarm_usage(log_dir: Path, logs_dir: Path) -> None:
             try:
                 data = json.loads(line)
             except json.JSONDecodeError:
+                logger.warning("Skipping malformed usage record in %s: %s", uf, line[:100])
                 continue
 
             # Normalize model name
@@ -789,7 +817,12 @@ def _aggregate_swarm_usage(log_dir: Path, logs_dir: Path) -> None:
             )
 
             with open(usage_file, "a") as f:
-                f.write(json.dumps(data) + "\n")
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    f.write(json.dumps(data) + "\n")
+                    f.flush()
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def print_usage_summary(logs_dir: Path) -> None:

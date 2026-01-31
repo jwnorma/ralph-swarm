@@ -1,8 +1,12 @@
 """Usage tracking for Claude invocations."""
 
+import fcntl
 import json
+import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -59,11 +63,19 @@ def calculate_cost(
 
 
 def save_usage(record: UsageRecord, logs_dir: Path) -> None:
-    """Append a usage record to logs/usage.json (JSON Lines format)."""
+    """Append a usage record to logs/usage.json (JSON Lines format).
+
+    Uses file locking to prevent corruption from concurrent writers.
+    """
     logs_dir.mkdir(parents=True, exist_ok=True)
     usage_file = logs_dir / "usage.json"
     with open(usage_file, "a") as f:
-        f.write(json.dumps(asdict(record)) + "\n")
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(json.dumps(asdict(record)) + "\n")
+            f.flush()
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def load_usage(logs_dir: Path) -> list[UsageRecord]:
@@ -80,7 +92,11 @@ def load_usage(logs_dir: Path) -> list[UsageRecord]:
         try:
             data = json.loads(line)
             records.append(UsageRecord(**data))
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError:
+            logger.warning("Skipping malformed JSON in usage file: %s", line[:100])
+            continue
+        except TypeError as e:
+            logger.warning("Skipping usage record with mismatched schema: %s", e)
             continue
     return records
 

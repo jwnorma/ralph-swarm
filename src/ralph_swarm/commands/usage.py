@@ -1,7 +1,6 @@
 """Usage command - Display cost reports from usage data."""
 
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -43,9 +42,10 @@ def usage_cmd(json_out: bool, by_model: bool, by_command: bool, since: str | Non
     if since:
         try:
             since_dt = datetime.fromisoformat(since)
-        except ValueError:
-            console.print(f"[red]Invalid date format: {since}. Use YYYY-MM-DD.[/red]")
-            sys.exit(1)
+        except ValueError as e:
+            raise click.BadParameter(
+                f"Invalid date format: {since}. Use YYYY-MM-DD.", param_hint="'--since'"
+            ) from e
         records = [r for r in records if datetime.fromisoformat(r.timestamp) >= since_dt]
 
     if not records:
