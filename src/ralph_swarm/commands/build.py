@@ -17,6 +17,12 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
 from ralph_swarm.prompts import load_prompt_with_vars
+from ralph_swarm.usage import (
+    UsageRecord,
+    calculate_cost,
+    parse_stream_json_usage,
+    save_usage,
+)
 
 console = Console()
 
@@ -137,14 +143,19 @@ def run_single_worker(
     env = os.environ.copy()
     env["BD_ACTOR"] = worker_id
 
+    # Always use stream-json to capture usage data
     cmd = [
         "claude",
         "--dangerously-skip-permissions",
         "--model", model,
+        "--output-format", "stream-json",
     ]
 
     if verbose:
-        cmd.extend(["--output-format", "stream-json", "--verbose"])
+        cmd.append("--verbose")
+
+    start_time = time.time()
+    captured_output = ""
 
     try:
         if log_file:
@@ -153,15 +164,26 @@ def run_single_worker(
                 f.write(f"Worker: {worker_id} | Time: {datetime.now().isoformat()}\n")
                 f.write(f"{'=' * 60}\n\n")
 
-                result = subprocess.run(  # noqa: S603
-                    cmd,
-                    input=prompt,
-                    stdout=f,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    cwd=cwd,
-                    env=env,
-                )
+            # Capture output for usage parsing while also writing to log
+            process = subprocess.Popen(  # noqa: S603
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=cwd,
+                env=env,
+            )
+            if process.stdin:
+                process.stdin.write(prompt)
+                process.stdin.close()
+            if process.stdout:
+                with open(log_file, "a") as f:
+                    for line in process.stdout:
+                        f.write(line)
+                        captured_output += line
+            process.wait()
+            result = subprocess.CompletedProcess(cmd, process.returncode)
         elif verbose:
             process = subprocess.Popen(  # noqa: S603
                 cmd,
@@ -178,6 +200,7 @@ def run_single_worker(
             if process.stdout:
                 for line in process.stdout:
                     console.print(line, end="")
+                    captured_output += line
             process.wait()
             result = subprocess.CompletedProcess(cmd, process.returncode)
         else:
@@ -189,14 +212,92 @@ def run_single_worker(
                 cwd=cwd,
                 env=env,
             )
+            captured_output = result.stdout or ""
             if result.stdout:
-                console.print(Panel(result.stdout[:2000], title=f"Worker {worker_id}"))
+                # Extract text result for display (skip stream-json lines)
+                display_text = _extract_result_text(result.stdout)
+                if display_text:
+                    console.print(Panel(display_text[:2000], title=f"Worker {worker_id}"))
+
+        duration = time.time() - start_time
+
+        # Parse and save usage data
+        _save_worker_usage(
+            output=captured_output,
+            command="build",
+            worker_id=worker_id,
+            model=model,
+            duration=duration,
+            logs_dir=cwd / "logs",
+            issue_id=issue_id,
+        )
 
         return 1 if result.returncode == 0 else 2
 
     except FileNotFoundError:
         console.print("[red]Claude CLI not found.[/red]")
         return 2
+
+
+def _extract_result_text(stream_json_output: str) -> str:
+    """Extract the final result text from stream-json output."""
+    for line in stream_json_output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+            if data.get("type") == "result":
+                return data.get("result", "")
+        except json.JSONDecodeError:
+            continue
+    return ""
+
+
+def _save_worker_usage(
+    output: str,
+    command: str,
+    worker_id: str,
+    model: str,
+    duration: float,
+    logs_dir: Path,
+    issue_id: str | None = None,
+) -> UsageRecord | None:
+    """Parse stream-json output and save usage record. Returns the record or None."""
+    usage_data = parse_stream_json_usage(output)
+    if not usage_data:
+        return None
+
+    input_tokens = usage_data.get("input_tokens", 0)
+    output_tokens = usage_data.get("output_tokens", 0)
+    cache_creation = usage_data.get("cache_creation_input_tokens", 0)
+    cache_read = usage_data.get("cache_read_input_tokens", 0)
+    resolved_model = usage_data.get("model", model) or model
+
+    # Normalize model name to short form
+    for short_name in ("opus", "sonnet", "haiku"):
+        if short_name in resolved_model.lower():
+            resolved_model = short_name
+            break
+
+    cost = calculate_cost(resolved_model, input_tokens, output_tokens, cache_creation, cache_read)
+
+    record = UsageRecord(
+        timestamp=datetime.now().isoformat(),
+        command=command,
+        worker_id=worker_id,
+        model=resolved_model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        cache_creation_input_tokens=cache_creation,
+        cache_read_input_tokens=cache_read,
+        cost_usd=cost,
+        duration_seconds=round(duration, 1),
+        issue_id=issue_id,
+    )
+
+    save_usage(record, logs_dir)
+    return record
 
 
 @click.command("build")
@@ -317,6 +418,9 @@ def build_cmd(
                 use_worktrees=use_worktrees,
             )
     finally:
+        # Show usage summary
+        print_usage_summary(cwd / "logs")
+
         # Clean up worktrees on exit
         if use_worktrees:
             console.print("\n[dim]Cleaning up worktrees...[/dim]")
@@ -469,12 +573,13 @@ def run_swarm(
             worktree_dir = create_worktree(cwd, worker_id)
             console.print(f"[green]  Created worktree for {worker_id}: {worktree_dir}[/green]")
 
-    # Create worker scripts
-    verbose_flags = " --output-format stream-json --verbose" if verbose else ""
+    # Create worker scripts — always use stream-json for usage capture
+    verbose_flags = " --verbose" if verbose else ""
     for i in range(1, workers + 1):
         worker_id = f"ralph-{i}"
         script_path = log_dir / f"worker-{i}.sh"
         log_path = log_dir / f"ralph-{i}.log"
+        usage_path = log_dir / f"ralph-{i}.usage.jsonl"
 
         # Determine working directory
         work_dir = cwd / ".ralph-worktrees" / worker_id if use_worktrees else cwd
@@ -538,9 +643,10 @@ while true; do
     echo "Successfully claimed $issue_id" >> "{log_path}"
     idle_count=0
 
-    # Launch Claude with the pre-assigned issue
-    cat << PROMPT_EOF | claude --dangerously-skip-permissions \\
-        --model {model}{verbose_flags} >> "{log_path}" 2>&1
+    # Launch Claude with stream-json to capture usage
+    start_ts=$(date +%s)
+    claude_output=$(cat << PROMPT_EOF | claude --dangerously-skip-permissions \\
+        --model {model} --output-format stream-json{verbose_flags} 2>&1
 {get_worker_prompt(worker_id)}
 
 **ASSIGNED ISSUE:** $issue_id
@@ -548,6 +654,34 @@ You have already been assigned issue $issue_id.
 Run \\`bd show $issue_id\\` to see details and implement it.
 Skip the claiming step - proceed directly to implementation.
 PROMPT_EOF
+)
+    end_ts=$(date +%s)
+    duration=$((end_ts - start_ts))
+
+    # Write full output to log
+    echo "$claude_output" >> "{log_path}"
+
+    # Extract the result line and save usage data
+    result_line=$(echo "$claude_output" | grep '"type":"result"' | tail -1)
+    if [ -n "$result_line" ]; then
+        echo "$result_line" | jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S)" \\
+            --arg cmd "build" --arg wid "{worker_id}" --arg iid "$issue_id" \\
+            --arg dur "$duration" '
+            .usage as $u |
+            {{
+                timestamp: $ts,
+                command: $cmd,
+                worker_id: $wid,
+                model: (.model // "{model}"),
+                input_tokens: ($u.input_tokens // 0),
+                output_tokens: ($u.output_tokens // 0),
+                cache_creation_input_tokens: ($u.cache_creation_input_tokens // 0),
+                cache_read_input_tokens: ($u.cache_read_input_tokens // 0),
+                cost_usd: 0,
+                duration_seconds: ($dur | tonumber),
+                issue_id: $iid
+            }}' >> "{usage_path}" 2>/dev/null
+    fi
 
     ((iteration++))
     sleep 2
@@ -606,5 +740,93 @@ done
 
         console.print("[green]All workers finished[/green]")
 
+        # Aggregate worker usage files into main usage.json
+        _aggregate_swarm_usage(log_dir, cwd / "logs")
+
     except KeyboardInterrupt:
         shutdown(None, None)
+        # Still aggregate any usage captured so far
+        _aggregate_swarm_usage(log_dir, cwd / "logs")
+
+
+def _aggregate_swarm_usage(log_dir: Path, logs_dir: Path) -> None:
+    """Aggregate per-worker usage .jsonl files into main usage.json.
+
+    Worker scripts write raw JSON lines with cost_usd=0; we recalculate costs here.
+    """
+    usage_files = list(log_dir.glob("*.usage.jsonl"))
+    if not usage_files:
+        return
+
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    usage_file = logs_dir / "usage.json"
+
+    for uf in usage_files:
+        for line in uf.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            # Normalize model name
+            model_name = data.get("model", "")
+            for short in ("opus", "sonnet", "haiku"):
+                if short in model_name.lower():
+                    model_name = short
+                    break
+            data["model"] = model_name
+
+            # Recalculate cost
+            data["cost_usd"] = calculate_cost(
+                model_name,
+                data.get("input_tokens", 0),
+                data.get("output_tokens", 0),
+                data.get("cache_creation_input_tokens", 0),
+                data.get("cache_read_input_tokens", 0),
+            )
+
+            with open(usage_file, "a") as f:
+                f.write(json.dumps(data) + "\n")
+
+
+def print_usage_summary(logs_dir: Path) -> None:
+    """Print a brief usage summary from accumulated usage records."""
+    from ralph_swarm.usage import load_usage
+
+    records = load_usage(logs_dir)
+    if not records:
+        return
+
+    console.print()
+    table = Table(title="Usage Summary", show_header=True)
+    table.add_column("Model", style="bold")
+    table.add_column("Invocations", justify="right")
+    table.add_column("Input Tokens", justify="right")
+    table.add_column("Output Tokens", justify="right")
+    table.add_column("Cost", justify="right", style="green")
+
+    by_model: dict[str, dict] = {}
+    for r in records:
+        m = by_model.setdefault(r.model, {"count": 0, "input": 0, "output": 0, "cost": 0.0})
+        m["count"] += 1
+        m["input"] += r.input_tokens
+        m["output"] += r.output_tokens
+        m["cost"] += r.cost_usd
+
+    total_cost = 0.0
+    for model_name, stats in sorted(by_model.items()):
+        table.add_row(
+            model_name,
+            str(stats["count"]),
+            f"{stats['input']:,}",
+            f"{stats['output']:,}",
+            f"${stats['cost']:.4f}",
+        )
+        total_cost += stats["cost"]
+
+    table.add_section()
+    table.add_row("Total", "", "", "", f"[bold]${total_cost:.4f}[/bold]")
+    console.print(table)
