@@ -1,12 +1,30 @@
 """Usage tracking for Claude invocations."""
 
-import fcntl
 import json
 import logging
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Platform-specific file locking
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock_file(f):
+        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+
+    def _unlock_file(f):
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _lock_file(f):
+        fcntl.flock(f, fcntl.LOCK_EX)
+
+    def _unlock_file(f):
+        fcntl.flock(f, fcntl.LOCK_UN)
 
 
 @dataclass
@@ -70,12 +88,12 @@ def save_usage(record: UsageRecord, logs_dir: Path) -> None:
     logs_dir.mkdir(parents=True, exist_ok=True)
     usage_file = logs_dir / "usage.json"
     with open(usage_file, "a") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        _lock_file(f)
         try:
             f.write(json.dumps(asdict(record)) + "\n")
             f.flush()
         finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            _unlock_file(f)
 
 
 def load_usage(logs_dir: Path) -> list[UsageRecord]:
@@ -85,7 +103,7 @@ def load_usage(logs_dir: Path) -> list[UsageRecord]:
         return []
 
     records = []
-    for line in usage_file.read_text().splitlines():
+    for line_num, line in enumerate(usage_file.read_text().splitlines(), 1):
         line = line.strip()
         if not line:
             continue
@@ -93,10 +111,17 @@ def load_usage(logs_dir: Path) -> list[UsageRecord]:
             data = json.loads(line)
             records.append(UsageRecord(**data))
         except json.JSONDecodeError:
-            logger.warning("Skipping malformed JSON in usage file: %s", line[:100])
+            logger.warning(
+                "Skipping malformed JSON at line %d in %s: %s", line_num, usage_file, line[:200]
+            )
             continue
         except TypeError as e:
-            logger.warning("Skipping usage record with mismatched schema: %s", e)
+            logger.warning(
+                "Skipping usage record with mismatched schema at line %d in %s: %s",
+                line_num,
+                usage_file,
+                e,
+            )
             continue
     return records
 

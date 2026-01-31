@@ -134,7 +134,8 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
                     text=True,
                     cwd=cwd,
                 )
-                assert process.stdin is not None, "Failed to open stdin pipe"
+                if process.stdin is None:
+                    raise RuntimeError("Failed to open stdin pipe")
                 process.stdin.write(plan_prompt)
                 process.stdin.close()
                 if process.stdout:

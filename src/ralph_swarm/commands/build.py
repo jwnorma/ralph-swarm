@@ -1,11 +1,9 @@
 """Build command - Build mode with worker swarm support."""
 
 import contextlib
-import fcntl
 import json
 import logging
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -22,6 +20,8 @@ from rich.table import Table
 from ralph_swarm.prompts import load_prompt_with_vars
 from ralph_swarm.usage import (
     UsageRecord,
+    _lock_file,
+    _unlock_file,
     calculate_cost,
     parse_stream_json_usage,
     save_usage,
@@ -95,16 +95,6 @@ def cleanup_worktrees(base_dir: Path) -> None:
     # Remove directory if empty
     if worktree_base.exists() and not any(worktree_base.iterdir()):
         worktree_base.rmdir()
-
-
-def _sanitize_shell_value(value: str) -> str:
-    """Sanitize a value for safe interpolation into a shell script.
-
-    Only allows alphanumeric, hyphens, underscores, and dots.
-    """
-    if not re.match(r"^[a-zA-Z0-9._-]+$", value):
-        raise ValueError(f"Unsafe value for shell interpolation: {value!r}")
-    return value
 
 
 def get_worker_prompt(worker_id: str, issue_id: str | None = None) -> str:
@@ -189,7 +179,8 @@ def run_single_worker(
                 cwd=cwd,
                 env=env,
             )
-            assert process.stdin is not None, "Failed to open stdin pipe"
+            if process.stdin is None:
+                raise RuntimeError("Failed to open stdin pipe")
             process.stdin.write(prompt)
             process.stdin.close()
             with open(log_file, "a") as f:
@@ -209,7 +200,8 @@ def run_single_worker(
                 cwd=cwd,
                 env=env,
             )
-            assert process.stdin is not None, "Failed to open stdin pipe"
+            if process.stdin is None:
+                raise RuntimeError("Failed to open stdin pipe")
             process.stdin.write(prompt)
             process.stdin.close()
             if process.stdout:
@@ -252,7 +244,7 @@ def run_single_worker(
     except FileNotFoundError:
         console.print(f"[red]Claude CLI not found for worker {worker_id}.[/red]")
         return 2
-    except Exception as e:
+    except (subprocess.SubprocessError, OSError, RuntimeError) as e:
         console.print(f"[red]Error in worker {worker_id}: {e}[/red]")
         return 2
 
@@ -592,22 +584,20 @@ def run_swarm(
             console.print(f"[green]  Created worktree for {worker_id}: {worktree_dir}[/green]")
 
     # Create worker scripts — always use stream-json for usage capture
-    # Sanitize model name for shell interpolation
-    safe_model = _sanitize_shell_value(model)
     verbose_flags = " --verbose" if verbose else ""
     for i in range(1, workers + 1):
         worker_id = f"ralph-{i}"
-        safe_worker_id = _sanitize_shell_value(worker_id)
         script_path = log_dir / f"worker-{i}.sh"
-        log_path = log_dir / f"ralph-{i}.log"
-        usage_path = log_dir / f"ralph-{i}.usage.jsonl"
 
-        # Determine working directory
-        work_dir = cwd / ".ralph-worktrees" / worker_id if use_worktrees else cwd
+        # Write the base prompt to a file to avoid heredoc injection
+        prompt_path = log_dir / f"ralph-{i}.prompt.txt"
+        prompt_path.write_text(get_worker_prompt(worker_id))
 
+        # All dynamic values passed via environment variables to avoid shell injection
         script_content = f"""#!/bin/bash
-export BD_ACTOR="{safe_worker_id}"
-cd "{work_dir}"
+# All paths/values passed via environment variables (set at launch)
+export BD_ACTOR="$RALPH_WORKER_ID"
+cd "$RALPH_WORK_DIR"
 
 # Random initial delay to reduce startup contention (0-3 seconds)
 sleep $((RANDOM % 4))
@@ -616,7 +606,7 @@ iteration=1
 idle_count=0
 
 while true; do
-    echo "=== Iteration $iteration - $(date) ===" >> "{log_path}"
+    echo "=== Iteration $iteration - $(date) ===" >> "$RALPH_LOG_PATH"
 
     # Get unassigned issues as JSON
     unassigned_json=$(bd ready --unassigned --json 2>/dev/null)
@@ -624,10 +614,10 @@ while true; do
 
     if [ "$unassigned_count" -eq 0 ]; then
         ((idle_count++))
-        echo "No unassigned work (idle: $idle_count/{idle_limit})" >> "{log_path}"
+        echo "No unassigned work (idle: $idle_count/{idle_limit})" >> "$RALPH_LOG_PATH"
 
         if [ "{auto_shutdown}" = "True" ] && [ "$idle_count" -ge "{idle_limit}" ]; then
-            echo "Auto-shutdown: no work remaining" >> "{log_path}"
+            echo "Auto-shutdown: no work remaining" >> "$RALPH_LOG_PATH"
             exit 0
         fi
 
@@ -640,60 +630,66 @@ while true; do
     issue_id=$(echo "$unassigned_json" | jq -r '.[0].id // empty' 2>/dev/null)
 
     if [ -z "$issue_id" ]; then
-        echo "Failed to parse issue ID, retrying..." >> "{log_path}"
+        echo "Failed to parse issue ID, retrying..." >> "$RALPH_LOG_PATH"
         sleep 2
         ((iteration++))
         continue
     fi
 
     # Atomically claim the issue
-    echo "Attempting to claim issue $issue_id..." >> "{log_path}"
-    bd update "$issue_id" --status in_progress --assignee "{safe_worker_id}" >> "{log_path}" 2>&1
+    echo "Attempting to claim issue $issue_id..." >> "$RALPH_LOG_PATH"
+    bd update "$issue_id" --status in_progress --assignee "$RALPH_WORKER_ID" \
+        >> "$RALPH_LOG_PATH" 2>&1
 
     # Verify claim succeeded (handle both dict and list responses)
     claimed_by=$(bd show "$issue_id" --json 2>/dev/null | \\
         jq -r 'if type == "array" then .[0].assignee else .assignee end' 2>/dev/null)
 
-    if [ "$claimed_by" != "{safe_worker_id}" ]; then
-        echo "Failed to claim $issue_id (claimed by $claimed_by), retrying..." >> "{log_path}"
+    if [ "$claimed_by" != "$RALPH_WORKER_ID" ]; then
+        echo "Failed to claim $issue_id (claimed by $claimed_by), retrying..." \
+            >> "$RALPH_LOG_PATH"
         sleep $((RANDOM % 3))  # Random backoff 0-2 seconds
         ((iteration++))
         continue
     fi
 
-    echo "Successfully claimed $issue_id" >> "{log_path}"
+    echo "Successfully claimed $issue_id" >> "$RALPH_LOG_PATH"
     idle_count=0
 
-    # Launch Claude with stream-json to capture usage
-    start_ts=$(date +%s)
-    claude_output=$(cat << PROMPT_EOF | claude --dangerously-skip-permissions \\
-        --model {safe_model} --output-format stream-json{verbose_flags} 2>&1
-{get_worker_prompt(worker_id)}
+    # Build prompt with assigned issue appended
+    prompt_file=$(mktemp)
+    cat "$RALPH_PROMPT_PATH" > "$prompt_file"
+    cat >> "$prompt_file" << ISSUE_EOF
 
 **ASSIGNED ISSUE:** $issue_id
 You have already been assigned issue $issue_id.
 Run \\`bd show $issue_id\\` to see details and implement it.
 Skip the claiming step - proceed directly to implementation.
-PROMPT_EOF
-)
+ISSUE_EOF
+
+    # Launch Claude with stream-json to capture usage
+    start_ts=$(date +%s)
+    claude_output=$(cat "$prompt_file" | claude --dangerously-skip-permissions \\
+        --model "$RALPH_MODEL" --output-format stream-json{verbose_flags} 2>&1)
     end_ts=$(date +%s)
     duration=$((end_ts - start_ts))
+    rm -f "$prompt_file"
 
     # Write full output to log
-    echo "$claude_output" >> "{log_path}"
+    echo "$claude_output" >> "$RALPH_LOG_PATH"
 
     # Extract the result line and save usage data
     result_line=$(echo "$claude_output" | grep '"type":"result"' | tail -1)
     if [ -n "$result_line" ]; then
         echo "$result_line" | jq -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S)" \\
-            --arg cmd "build" --arg wid "{safe_worker_id}" --arg iid "$issue_id" \\
-            --arg dur "$duration" '
+            --arg cmd "build" --arg wid "$RALPH_WORKER_ID" --arg iid "$issue_id" \\
+            --arg dur "$duration" --arg mdl "$RALPH_MODEL" '
             .usage as $u |
             {{
                 timestamp: $ts,
                 command: $cmd,
                 worker_id: $wid,
-                model: (.model // "{safe_model}"),
+                model: (.model // $mdl),
                 input_tokens: ($u.input_tokens // 0),
                 output_tokens: ($u.output_tokens // 0),
                 cache_creation_input_tokens: ($u.cache_creation_input_tokens // 0),
@@ -701,7 +697,7 @@ PROMPT_EOF
                 cost_usd: 0,
                 duration_seconds: ($dur | tonumber),
                 issue_id: $iid
-            }}' >> "{usage_path}" 2>/dev/null
+            }}' >> "$RALPH_USAGE_PATH" 2>/dev/null
     fi
 
     ((iteration++))
@@ -712,14 +708,23 @@ done
         script_path.chmod(0o755)
         worker_scripts.append(script_path)
 
-    # Start workers
+    # Start workers with env vars for all dynamic paths/values
     for i, script in enumerate(worker_scripts, 1):
-        log_path = log_dir / f"ralph-{i}.log"
+        worker_id = f"ralph-{i}"
+        work_dir = cwd / ".ralph-worktrees" / worker_id if use_worktrees else cwd
+        worker_env = os.environ.copy()
+        worker_env["RALPH_WORKER_ID"] = worker_id
+        worker_env["RALPH_WORK_DIR"] = str(work_dir)
+        worker_env["RALPH_LOG_PATH"] = str(log_dir / f"ralph-{i}.log")
+        worker_env["RALPH_USAGE_PATH"] = str(log_dir / f"ralph-{i}.usage.jsonl")
+        worker_env["RALPH_PROMPT_PATH"] = str(log_dir / f"ralph-{i}.prompt.txt")
+        worker_env["RALPH_MODEL"] = model
         process = subprocess.Popen(  # noqa: S603
             ["/bin/bash", str(script)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd=cwd,
+            env=worker_env,
         )
         processes.append(process)
         console.print(f"[green]  Started ralph-{i} (PID: {process.pid})[/green]")
@@ -789,14 +794,17 @@ def _aggregate_swarm_usage(log_dir: Path, logs_dir: Path) -> None:
     usage_file = logs_dir / "usage.json"
 
     for uf in usage_files:
-        for line in uf.read_text().splitlines():
+        for line_num, line in enumerate(uf.read_text().splitlines(), 1):
             line = line.strip()
             if not line:
                 continue
             try:
                 data = json.loads(line)
             except json.JSONDecodeError:
-                logger.warning("Skipping malformed usage record in %s: %s", uf, line[:100])
+                logger.warning(
+                    "Skipping malformed usage record at line %d in %s: %s",
+                    line_num, uf, line[:200],
+                )
                 continue
 
             # Normalize model name
@@ -817,12 +825,12 @@ def _aggregate_swarm_usage(log_dir: Path, logs_dir: Path) -> None:
             )
 
             with open(usage_file, "a") as f:
-                fcntl.flock(f, fcntl.LOCK_EX)
+                _lock_file(f)
                 try:
                     f.write(json.dumps(data) + "\n")
                     f.flush()
                 finally:
-                    fcntl.flock(f, fcntl.LOCK_UN)
+                    _unlock_file(f)
 
 
 def print_usage_summary(logs_dir: Path) -> None:
