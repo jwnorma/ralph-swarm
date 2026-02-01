@@ -489,24 +489,32 @@ sleep $((RANDOM % 4))
 iteration=1
 idle_count=0
 
+check_idle_shutdown() {{
+    local reason="$1"
+    ((idle_count++))
+    echo "$reason (idle: $idle_count/{idle_limit})" >> "{log_path}"
+    if [ "{auto_shutdown}" = "True" ] && [ "$idle_count" -ge "{idle_limit}" ]; then
+        echo "Auto-shutdown: no work remaining" >> "{log_path}"
+        exit 0
+    fi
+}}
+
 while true; do
     echo "=== Iteration $iteration - $(date) ===" >> "{log_path}"
 
-    # Get ready issues and filter to unassigned using jq
+    # Filter to unassigned client-side because bd ready --unassigned
+    # does not reliably exclude assigned issues
     all_json=$(bd ready --json 2>/dev/null)
     unassigned_json=$(echo "$all_json" | \\
         jq -c '[.[] | select(.assignee == null or .assignee == "")]' 2>/dev/null)
+    # Default to empty array if jq failed (e.g. invalid input)
+    if ! echo "$unassigned_json" | jq empty 2>/dev/null; then
+        unassigned_json="[]"
+    fi
     unassigned_count=$(echo "$unassigned_json" | jq 'length' 2>/dev/null || echo "0")
 
-    if [ "$unassigned_count" -eq 0 ] || [ -z "$unassigned_count" ]; then
-        ((idle_count++))
-        echo "No unassigned work (idle: $idle_count/{idle_limit})" >> "{log_path}"
-
-        if [ "{auto_shutdown}" = "True" ] && [ "$idle_count" -ge "{idle_limit}" ]; then
-            echo "Auto-shutdown: no work remaining" >> "{log_path}"
-            exit 0
-        fi
-
+    if [ "$unassigned_count" -eq 0 ]; then
+        check_idle_shutdown "No unassigned work"
         sleep 5
         ((iteration++))
         continue
@@ -516,14 +524,7 @@ while true; do
     issue_id=$(echo "$unassigned_json" | jq -r '.[0].id // empty' 2>/dev/null)
 
     if [ -z "$issue_id" ]; then
-        ((idle_count++))
-        echo "No parseable issue ID (idle: $idle_count/{idle_limit})" >> "{log_path}"
-
-        if [ "{auto_shutdown}" = "True" ] && [ "$idle_count" -ge "{idle_limit}" ]; then
-            echo "Auto-shutdown: no work remaining" >> "{log_path}"
-            exit 0
-        fi
-
+        check_idle_shutdown "No parseable issue ID"
         sleep 2
         ((iteration++))
         continue
