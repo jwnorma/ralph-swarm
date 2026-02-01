@@ -492,11 +492,13 @@ idle_count=0
 while true; do
     echo "=== Iteration $iteration - $(date) ===" >> "{log_path}"
 
-    # Get unassigned issues as JSON
-    unassigned_json=$(bd ready --unassigned --json 2>/dev/null)
+    # Get ready issues and filter to unassigned using jq
+    all_json=$(bd ready --json 2>/dev/null)
+    unassigned_json=$(echo "$all_json" | \\
+        jq -c '[.[] | select(.assignee == null or .assignee == "")]' 2>/dev/null)
     unassigned_count=$(echo "$unassigned_json" | jq 'length' 2>/dev/null || echo "0")
 
-    if [ "$unassigned_count" -eq 0 ]; then
+    if [ "$unassigned_count" -eq 0 ] || [ -z "$unassigned_count" ]; then
         ((idle_count++))
         echo "No unassigned work (idle: $idle_count/{idle_limit})" >> "{log_path}"
 
@@ -514,7 +516,14 @@ while true; do
     issue_id=$(echo "$unassigned_json" | jq -r '.[0].id // empty' 2>/dev/null)
 
     if [ -z "$issue_id" ]; then
-        echo "Failed to parse issue ID, retrying..." >> "{log_path}"
+        ((idle_count++))
+        echo "No parseable issue ID (idle: $idle_count/{idle_limit})" >> "{log_path}"
+
+        if [ "{auto_shutdown}" = "True" ] && [ "$idle_count" -ge "{idle_limit}" ]; then
+            echo "Auto-shutdown: no work remaining" >> "{log_path}"
+            exit 0
+        fi
+
         sleep 2
         ((iteration++))
         continue
