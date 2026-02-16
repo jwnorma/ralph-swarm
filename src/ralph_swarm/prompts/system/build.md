@@ -75,4 +75,5 @@
 - Full implementations only (no placeholders)
 - Always search before implementing
 - Update CLAUDE.md if you learn something new
-- Make sure to document any architectural changes 
+- Make sure to document any architectural changes
+- **NEVER use the EnterPlanMode tool.** You are running non-interactively with no user to approve plans, so EnterPlanMode will cause you to exit without doing any work. Instead, plan your approach inline (read files, reason through the design) then proceed directly to implementation.

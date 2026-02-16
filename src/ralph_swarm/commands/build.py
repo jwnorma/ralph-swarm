@@ -174,7 +174,9 @@ def _check_rate_limited(log_file: Path, tail_lines: int = 10) -> bool:
         return False
 
 
-def _release_issue(issue_id: str, worker_id: str, cwd: Path, log_file: Path | None = None) -> None:
+def _release_issue(
+    issue_id: str, worker_id: str, cwd: Path, reason: str, log_file: Path | None = None
+) -> None:
     """Release a claimed issue back to the queue."""
     subprocess.run(  # noqa: S603, S607
         ["bd", "update", issue_id, "--status", "open", "--assignee", ""],
@@ -182,11 +184,28 @@ def _release_issue(issue_id: str, worker_id: str, cwd: Path, log_file: Path | No
         text=True,
         cwd=cwd,
     )
-    msg = f"Rate limit detected. Released issue {issue_id} and shutting down worker {worker_id}."
+    msg = f"{reason} Released issue {issue_id} and shutting down worker {worker_id}."
     if log_file:
         with open(log_file, "a") as f:
             f.write(f"\n{msg}\n")
     console.print(f"[yellow]{msg}[/yellow]")
+
+
+def _issue_still_in_progress(issue_id: str, cwd: Path) -> bool:
+    """Check if an issue is still in_progress (i.e., Claude didn't complete it)."""
+    result = subprocess.run(  # noqa: S603, S607
+        ["bd", "show", issue_id, "--json"],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    try:
+        data = json.loads(result.stdout)
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        return data.get("status") == "in_progress"
+    except (json.JSONDecodeError, KeyError, IndexError):
+        return False
 
 
 def run_single_worker(
@@ -505,7 +524,16 @@ def run_single_worker_loop(
 
             # Check if Claude hit a rate limit
             if log_file and _check_rate_limited(log_file):
-                _release_issue(issue_id, worker_id, work_dir, log_file)
+                _release_issue(issue_id, worker_id, work_dir, "Rate limit detected.", log_file)
+                break
+
+            # Check if Claude exited without completing the issue
+            if _issue_still_in_progress(issue_id, work_dir):
+                _release_issue(
+                    issue_id, worker_id, work_dir,
+                    "Issue still in_progress after Claude exited.",
+                    log_file,
+                )
                 break
 
             if once:
@@ -637,6 +665,15 @@ PROMPT_EOF
     last_output=$(tail -10 "{log_path}")
     if echo "$last_output" | grep -qi "hit your limit\\|rate limit"; then
         echo "Rate limit detected. Releasing issue $issue_id and shutting down." >> "{log_path}"
+        bd update "$issue_id" --status open --assignee "" >> "{log_path}" 2>&1
+        exit 0
+    fi
+
+    # Check if Claude exited without completing the issue
+    issue_status=$(bd show "$issue_id" --json 2>/dev/null | \\
+        jq -r 'if type == "array" then .[0].status else .status end' 2>/dev/null)
+    if [ "$issue_status" = "in_progress" ]; then
+        echo "Issue $issue_id still in_progress. Releasing and stopping." >> "{log_path}"
         bd update "$issue_id" --status open --assignee "" >> "{log_path}" 2>&1
         exit 0
     fi
