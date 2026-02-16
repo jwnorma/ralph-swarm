@@ -21,6 +21,48 @@ from ralph_swarm.prompts import load_prompt_with_vars
 console = Console()
 
 
+def _check_worktree_prerequisites(base_dir: Path) -> None:
+    """Validate the git repo is ready for worktree creation."""
+    # Check if inside a git repo
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "rev-parse", "--git-dir"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+    if result.returncode != 0:
+        raise click.ClickException(
+            "Not a git repository. Initialize one with 'git init' before using worktrees."
+        )
+
+    # Check if HEAD is valid (repo has at least one commit)
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "rev-parse", "--verify", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+    if result.returncode != 0:
+        raise click.ClickException(
+            "Git repository has no commits. "
+            "Create an initial commit before using worktrees:\n"
+            "  git add . && git commit -m 'Initial commit'"
+        )
+
+    # Check for uncommitted changes that would prevent worktree checkout
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+    if result.stdout.strip():
+        console.print(
+            "[yellow]Warning: You have uncommitted changes. "
+            "Worktrees will be created from the last commit (HEAD).[/yellow]"
+        )
+
+
 def create_worktree(base_dir: Path, worker_id: str) -> Path:
     """Create a git worktree for the worker.
 
@@ -46,7 +88,7 @@ def create_worktree(base_dir: Path, worker_id: str) -> Path:
     )
 
     if result.returncode != 0:
-        console.print(f"[red]Failed to create worktree: {result.stderr}[/red]")
+        console.print(f"[red]Failed to create worktree: {result.stderr.strip()}[/red]")
         raise RuntimeError(f"Failed to create worktree for {worker_id}")
 
     return worktree_dir
@@ -340,6 +382,7 @@ def run_single_worker_loop(
 
     # Create worktree if requested
     if use_worktree:
+        _check_worktree_prerequisites(cwd)
         work_dir = create_worktree(cwd, worker_id)
         console.print(f"[green]Created worktree: {work_dir}[/green]")
     else:
@@ -464,6 +507,7 @@ def run_swarm(
 
     # Create worktrees if requested
     if use_worktrees:
+        _check_worktree_prerequisites(cwd)
         for i in range(1, workers + 1):
             worker_id = f"ralph-{i}"
             worktree_dir = create_worktree(cwd, worker_id)
