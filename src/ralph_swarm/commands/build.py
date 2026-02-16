@@ -164,6 +164,31 @@ def get_work_status(cwd: Path) -> dict:
         return {"total": 0, "unassigned": 0, "issues": []}
 
 
+def _check_rate_limited(log_file: Path, tail_lines: int = 10) -> bool:
+    """Check if the tail of a log file contains rate-limit indicators."""
+    try:
+        lines = log_file.read_text().splitlines()[-tail_lines:]
+        text = "\n".join(lines).lower()
+        return "hit your limit" in text or "rate limit" in text
+    except (OSError, ValueError):
+        return False
+
+
+def _release_issue(issue_id: str, worker_id: str, cwd: Path, log_file: Path | None = None) -> None:
+    """Release a claimed issue back to the queue."""
+    subprocess.run(  # noqa: S603, S607
+        ["bd", "update", issue_id, "--status", "open", "--assignee", ""],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    msg = f"Rate limit detected. Released issue {issue_id} and shutting down worker {worker_id}."
+    if log_file:
+        with open(log_file, "a") as f:
+            f.write(f"\n{msg}\n")
+    console.print(f"[yellow]{msg}[/yellow]")
+
+
 def run_single_worker(
     worker_id: str,
     model: str,
@@ -478,6 +503,11 @@ def run_single_worker_loop(
                 console.print("[red]Worker encountered error[/red]")
                 break
 
+            # Check if Claude hit a rate limit
+            if log_file and _check_rate_limited(log_file):
+                _release_issue(issue_id, worker_id, work_dir, log_file)
+                break
+
             if once:
                 break
 
@@ -602,6 +632,14 @@ You have already been assigned issue $issue_id.
 Run \\`bd show $issue_id\\` to see details and implement it.
 Skip the claiming step - proceed directly to implementation.
 PROMPT_EOF
+
+    # Check if Claude hit a rate limit
+    last_output=$(tail -10 "{log_path}")
+    if echo "$last_output" | grep -qi "hit your limit\\|rate limit"; then
+        echo "Rate limit detected. Releasing issue $issue_id and shutting down." >> "{log_path}"
+        bd update "$issue_id" --status open --assignee "" >> "{log_path}" 2>&1
+        exit 0
+    fi
 
     ((iteration++))
     sleep 2
