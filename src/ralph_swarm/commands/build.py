@@ -1,6 +1,7 @@
 """Build command - Build mode with worker swarm support."""
 
 import contextlib
+import fcntl
 import json
 import os
 import signal
@@ -49,6 +50,19 @@ def _check_worktree_prerequisites(base_dir: Path) -> None:
             "  git add . && git commit -m 'Initial commit'"
         )
 
+    # Check that we're on the main branch (required as merge target)
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+    if result.returncode == 0 and result.stdout.strip() != "main":
+        raise click.ClickException(
+            f"Must be on 'main' branch to use worktrees (currently on '{result.stdout.strip()}'). "
+            "Worker branches merge back to main after each task."
+        )
+
     # Check for uncommitted changes that would prevent worktree checkout
     result = subprocess.run(  # noqa: S603, S607
         ["git", "status", "--porcelain"],
@@ -64,13 +78,13 @@ def _check_worktree_prerequisites(base_dir: Path) -> None:
 
 
 def create_worktree(base_dir: Path, worker_id: str) -> Path:
-    """Create a git worktree for the worker.
+    """Create a git worktree for the worker on a named branch.
 
     Returns the path to the worktree directory.
     """
     worktree_dir = base_dir / ".ralph-worktrees" / worker_id
 
-    # Remove if exists (from previous run)
+    # Remove existing worktree (from previous run)
     if worktree_dir.exists():
         console.print(f"[yellow]Removing existing worktree: {worktree_dir}[/yellow]")
         subprocess.run(  # noqa: S603, S607
@@ -79,9 +93,16 @@ def create_worktree(base_dir: Path, worker_id: str) -> Path:
             cwd=base_dir,
         )
 
-    # Create worktree
+    # Delete stale branch if it exists from a previous run
+    subprocess.run(  # noqa: S603, S607
+        ["git", "branch", "-D", worker_id],
+        capture_output=True,
+        cwd=base_dir,
+    )
+
+    # Create worktree on a named branch
     result = subprocess.run(  # noqa: S603, S607
-        ["git", "worktree", "add", str(worktree_dir), "HEAD"],
+        ["git", "worktree", "add", str(worktree_dir), "-b", worker_id, "HEAD"],
         capture_output=True,
         text=True,
         cwd=base_dir,
@@ -94,8 +115,61 @@ def create_worktree(base_dir: Path, worker_id: str) -> Path:
     return worktree_dir
 
 
+def merge_worker_to_main(base_dir: Path, worker_id: str) -> str:
+    """Merge worker branch back to main. Returns 'success', 'nothing', or 'conflict'.
+
+    Uses file locking to serialize concurrent merges from multiple workers.
+    """
+    # Check if worker branch has commits ahead of main
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "log", f"main..{worker_id}", "--oneline"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return "nothing"
+
+    lock_path = base_dir / ".ralph-worktrees" / ".merge.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lock_fd = open(lock_path, "w")  # noqa: SIM115
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+
+        result = subprocess.run(  # noqa: S603, S607
+            ["git", "merge", worker_id, "--no-edit"],
+            capture_output=True,
+            text=True,
+            cwd=base_dir,
+        )
+        if result.returncode != 0:
+            # Merge conflict — abort and preserve the branch
+            subprocess.run(  # noqa: S603, S607
+                ["git", "merge", "--abort"],
+                capture_output=True,
+                cwd=base_dir,
+            )
+            return "conflict"
+
+        return "success"
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
+
+
+def reset_worker_branch(base_dir: Path, worker_id: str) -> None:
+    """Reset worker worktree to main HEAD so it's ready for the next task."""
+    worktree_dir = base_dir / ".ralph-worktrees" / worker_id
+    subprocess.run(  # noqa: S603, S607
+        ["git", "reset", "--hard", "main"],
+        capture_output=True,
+        cwd=worktree_dir,
+    )
+
+
 def cleanup_worktrees(base_dir: Path) -> None:
-    """Clean up all ralph worktrees."""
+    """Clean up all ralph worktrees, warning about unmerged work."""
     worktree_base = base_dir / ".ralph-worktrees"
     if not worktree_base.exists():
         return
@@ -111,14 +185,53 @@ def cleanup_worktrees(base_dir: Path) -> None:
     if result.returncode != 0:
         return
 
+    # Collect branch names associated with ralph worktrees
+    worktree_branches: list[str] = []
+
     # Parse worktree list and remove ralph worktrees
     for line in result.stdout.split("\n"):
         if line.startswith("worktree "):
             worktree_path = line.split(" ", 1)[1]
             if ".ralph-worktrees" in worktree_path:
+                # Extract worker_id (branch name) from path
+                branch_name = Path(worktree_path).name
+
+                # Check for unmerged commits before removing
+                log_result = subprocess.run(  # noqa: S603, S607
+                    ["git", "log", f"main..{branch_name}", "--oneline"],
+                    capture_output=True,
+                    text=True,
+                    cwd=base_dir,
+                )
+                if log_result.returncode == 0 and log_result.stdout.strip():
+                    commit_count = len(log_result.stdout.strip().splitlines())
+                    console.print(
+                        f"[yellow]Warning: Branch '{branch_name}' has {commit_count} "
+                        f"unmerged commit(s). Keeping branch ref for recovery.[/yellow]"
+                    )
+                    worktree_branches.append(branch_name)
+
                 console.print(f"[dim]Removing worktree: {worktree_path}[/dim]")
                 subprocess.run(  # noqa: S603, S607
                     ["git", "worktree", "remove", worktree_path, "--force"],
+                    capture_output=True,
+                    cwd=base_dir,
+                )
+
+    # Delete branches that were fully merged (no unmerged commits)
+    # Keep branches with unmerged work for manual recovery
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "branch", "--list", "ralph-*"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+    if result.returncode == 0:
+        for line in result.stdout.strip().splitlines():
+            branch = line.strip()
+            if branch and branch not in worktree_branches:
+                subprocess.run(  # noqa: S603, S607
+                    ["git", "branch", "-D", branch],
                     capture_output=True,
                     cwd=base_dir,
                 )
@@ -536,6 +649,21 @@ def run_single_worker_loop(
                 )
                 break
 
+            # Merge completed work back to main
+            if use_worktree:
+                console.print(f"[dim]Merging {worker_id} branch to main...[/dim]")
+                merge_result = merge_worker_to_main(cwd, worker_id)
+                if merge_result == "success":
+                    console.print(f"[green]Merged {worker_id} to main[/green]")
+                    reset_worker_branch(cwd, worker_id)
+                elif merge_result == "conflict":
+                    console.print(
+                        f"[red]Merge conflict on {worker_id}. "
+                        f"Branch preserved for manual resolution.[/red]"
+                    )
+                    break
+                # "nothing" — no commits to merge, continue normally
+
             if once:
                 break
 
@@ -591,6 +719,9 @@ sleep $((RANDOM % 4))
 iteration=1
 idle_count=0
 
+MERGE_LOCK="{cwd}/.ralph-worktrees/.merge.lock"
+MAIN_REPO="{cwd}"
+
 check_idle_shutdown() {{
     local reason="$1"
     ((idle_count++))
@@ -599,6 +730,32 @@ check_idle_shutdown() {{
         echo "Auto-shutdown: no work remaining" >> "{log_path}"
         exit 0
     fi
+}}
+
+merge_to_main() {{
+    # Check if worker branch has commits ahead of main
+    ahead=$(git -C "$MAIN_REPO" log "main..{worker_id}" --oneline 2>/dev/null)
+    if [ -z "$ahead" ]; then
+        echo "Nothing to merge for {worker_id}" >> "{log_path}"
+        return 0
+    fi
+
+    echo "Merging {worker_id} to main..." >> "{log_path}"
+
+    # Use flock for serialized merges
+    (
+        flock -x 200
+        if git -C "$MAIN_REPO" merge "{worker_id}" --no-edit >> "{log_path}" 2>&1; then
+            echo "Merged {worker_id} to main successfully" >> "{log_path}"
+            # Reset worktree to main HEAD for next task
+            git -C "{work_dir}" reset --hard main >> "{log_path}" 2>&1
+        else
+            echo "Merge conflict on {worker_id}. Aborting merge." >> "{log_path}"
+            git -C "$MAIN_REPO" merge --abort >> "{log_path}" 2>&1
+            exit 1
+        fi
+    ) 200>"$MERGE_LOCK"
+    return $?
 }}
 
 while true; do
@@ -676,6 +833,12 @@ PROMPT_EOF
         echo "Issue $issue_id still in_progress. Releasing and stopping." >> "{log_path}"
         bd update "$issue_id" --status open --assignee "" >> "{log_path}" 2>&1
         exit 0
+    fi
+
+    # Merge completed work back to main
+    if ! merge_to_main; then
+        echo "Merge conflict — stopping worker {worker_id}" >> "{log_path}"
+        exit 1
     fi
 
     ((iteration++))
