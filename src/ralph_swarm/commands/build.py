@@ -343,7 +343,7 @@ def run_single_worker(
         "--model", model,
     ]
 
-    if verbose:
+    if verbose or log_file:
         cmd.extend(["--output-format", "stream-json", "--verbose"])
 
     try:
@@ -715,7 +715,7 @@ def run_swarm(
             console.print(f"[green]  Created worktree for {worker_id}: {worktree_dir}[/green]")
 
     # Create worker scripts
-    verbose_flags = " --output-format stream-json --verbose" if verbose else ""
+    verbose_flags = " --output-format stream-json --verbose"
     for i in range(1, workers + 1):
         worker_id = f"ralph-{i}"
         script_path = log_dir / f"worker-{i}.sh"
