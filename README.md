@@ -62,10 +62,10 @@ Ralph Swarm follows a five-stage workflow that takes a project from idea to impl
     CLAUDE.md       docs/research/  in specs/        (epics/tasks)  Git commits
     Subagents       (optional)      Review rules     Dependencies   ADRs
 
-                                                              ┌─────────────────┐
-                                                              │  STATUS/CLEANUP │
-                                                              │   (anytime)     │
-                                                              └─────────────────┘
+                                                       ┌────────────────────────┐
+                                                       │ STATUS/SHUTDOWN/CLEANUP│
+                                                       │       (anytime)       │
+                                                       └────────────────────────┘
 ```
 
 ---
@@ -587,7 +587,7 @@ View logs:
 
 ---
 
-### Monitoring: Status & Cleanup
+### Monitoring: Status, Shutdown & Cleanup
 
 #### `ralph status`
 
@@ -619,6 +619,19 @@ Dependency Tree:
 │   ├── [in_progress] Docker client wrapper
 │   ├── [open] Container listing
 │   └── [open] Document: Docker Integration
+```
+
+#### `ralph shutdown`
+
+Gracefully stop workers after their current task:
+
+```
+$ ralph shutdown
+Shutdown requested — workers will stop after their current task.
+
+# To cancel and let workers continue:
+$ ralph shutdown --cancel
+Shutdown cancelled — workers may continue.
 ```
 
 #### `ralph cleanup`
@@ -763,6 +776,16 @@ Options:
 - `--auto-shutdown/--no-auto-shutdown` - Shutdown when no work remains (default: enabled)
 - `--idle-limit` - Iterations before auto-shutdown
 - `--verbose, -v` - Show real-time output
+
+### `ralph shutdown`
+
+Gracefully stop running workers:
+- Creates a `.ralph-stop` file that workers check before claiming new work
+- Workers finish their current task, then exit
+- Use `--cancel` to remove the stop file and allow builds to resume
+
+Options:
+- `--cancel` - Cancel a pending shutdown (remove stop file)
 
 ### `ralph status`
 

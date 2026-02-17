@@ -4,7 +4,10 @@ import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from click.testing import CliRunner
+
 from ralph_swarm.commands.build import get_work_status
+from ralph_swarm.commands.shutdown import STOP_FILE, shutdown_cmd
 
 
 class TestGetWorkStatus:
@@ -336,3 +339,51 @@ class TestWorkerScriptLogic:
             text=True,
         )
         assert result.stdout.strip() == "null"
+
+
+class TestShutdownCommand:
+    """Tests for the shutdown command."""
+
+    def test_shutdown_creates_stop_file(self, tmp_path: Path, monkeypatch) -> None:
+        """ralph shutdown should create .ralph-stop file."""
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(shutdown_cmd)
+        assert result.exit_code == 0
+        assert (tmp_path / STOP_FILE).exists()
+
+    def test_shutdown_cancel_removes_stop_file(self, tmp_path: Path, monkeypatch) -> None:
+        """ralph shutdown --cancel should remove .ralph-stop file."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / STOP_FILE).touch()
+        runner = CliRunner()
+        result = runner.invoke(shutdown_cmd, ["--cancel"])
+        assert result.exit_code == 0
+        assert not (tmp_path / STOP_FILE).exists()
+
+    def test_shutdown_cancel_no_file(self, tmp_path: Path, monkeypatch) -> None:
+        """ralph shutdown --cancel with no stop file should not error."""
+        monkeypatch.chdir(tmp_path)
+        runner = CliRunner()
+        result = runner.invoke(shutdown_cmd, ["--cancel"])
+        assert result.exit_code == 0
+        assert "No shutdown in progress" in result.output
+
+
+class TestBuildClearsStopFile:
+    """Tests for build_cmd clearing leftover stop files."""
+
+    def test_build_clears_leftover_stop_file(self, tmp_path: Path, monkeypatch) -> None:
+        """ralph build should remove leftover .ralph-stop on start."""
+        monkeypatch.chdir(tmp_path)
+        stop_file = tmp_path / STOP_FILE
+        stop_file.touch()
+
+        # build_cmd exits early because CLAUDE.md is missing, but the
+        # stop file cleanup happens before that check
+        from ralph_swarm.commands.build import build_cmd
+
+        runner = CliRunner()
+        runner.invoke(build_cmd)
+
+        assert not stop_file.exists()

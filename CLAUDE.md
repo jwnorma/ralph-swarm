@@ -41,3 +41,8 @@ The main workflow phases are:
 3. `ralph specify` - Define specifications
 4. `ralph plan` - Create epics and tasks
 5. `ralph build` - Implement with worker swarm
+
+Utilities:
+- `ralph status` - Show project progress and worker status
+- `ralph shutdown` - Gracefully stop running workers (finish current task, then exit)
+- `ralph cleanup` - Clean up orphaned work from crashed workers

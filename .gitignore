@@ -35,6 +35,9 @@ htmlcov/
 # Ralph worktrees
 .ralph-worktrees/
 
+# Ralph shutdown signal
+.ralph-stop
+
 # OS
 .DS_Store
 Thumbs.db

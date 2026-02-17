@@ -17,6 +17,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from ralph_swarm.commands.shutdown import STOP_FILE
 from ralph_swarm.prompts import load_prompt_with_vars
 
 console = Console()
@@ -436,6 +437,11 @@ def build_cmd(
     """
     cwd = Path.cwd()
 
+    # Clear any leftover stop file from a previous shutdown
+    stop_file = cwd / STOP_FILE
+    if stop_file.exists():
+        stop_file.unlink()
+
     # Check for required files
     if not (cwd / "CLAUDE.md").exists():
         console.print("[red]CLAUDE.md not found. Run 'ralph init' first.[/red]")
@@ -550,6 +556,12 @@ def run_single_worker_loop(
 
     try:
         while True:
+            # Check for graceful shutdown request
+            stop_file = Path(cwd) / STOP_FILE
+            if stop_file.exists():
+                console.print("[yellow]Shutdown requested — stopping gracefully[/yellow]")
+                break
+
             console.print(
                 f"[bold]Iteration {iteration}[/bold] - {datetime.now().strftime('%H:%M:%S')}"
             )
@@ -762,6 +774,11 @@ merge_to_main() {{
 }}
 
 while true; do
+    if [ -f "{cwd}/{STOP_FILE}" ]; then
+        echo "Shutdown requested — stopping gracefully" >> "{log_path}"
+        exit 0
+    fi
+
     echo "=== Iteration $iteration - $(date) ===" >> "{log_path}"
 
     # Filter to unassigned client-side because bd ready --unassigned
