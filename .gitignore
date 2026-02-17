@@ -32,6 +32,9 @@ htmlcov/
 *.swo
 *~
 
+# Ralph worktrees
+.ralph-worktrees/
+
 # OS
 .DS_Store
 Thumbs.db
