@@ -633,7 +633,6 @@ def run_single_worker_loop(
 
             if result == 2:
                 console.print("[red]Worker encountered error[/red]")
-                break
 
             # Check if Claude hit a rate limit
             if log_file and _check_rate_limited(log_file):
@@ -663,6 +662,10 @@ def run_single_worker_loop(
                     )
                     break
                 # "nothing" — no commits to merge, continue normally
+
+            # Stop on error after merge attempt
+            if result == 2:
+                break
 
             if once:
                 break
