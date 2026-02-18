@@ -5,7 +5,7 @@
 You are helping add a new feature to an existing project.
 
 **Read first:**
-- CLAUDE.md for project context
+- AGENTS.md for project context
 - Any research docs in `docs/research/` (technology evaluations, recommendations)
 - Existing specs in `specs/` directory
 - Current state of the codebase

@@ -36,7 +36,7 @@ def run_command(cmd: list[str], cwd: Path | None = None) -> subprocess.Completed
 
 def is_initialized(path: Path) -> bool:
     """Check if a project is already initialized."""
-    markers = [".beads", "CLAUDE.md"]
+    markers = [".beads", "AGENTS.md"]
     return any((path / marker).exists() for marker in markers)
 
 
@@ -48,7 +48,7 @@ def init_cmd() -> None:
     - Define the project objective
     - Choose your tech stack
     - Initialize git and beads
-    - Generate a CLAUDE.md scaffold
+    - Generate an AGENTS.md scaffold
     """
     project_path = Path.cwd()
     project_name = project_path.name
@@ -63,12 +63,12 @@ def init_cmd() -> None:
     # Check if already initialized
     if is_initialized(project_path):
         console.print("[red]Project already initialized.[/red]")
-        console.print("[dim]Found existing .beads or CLAUDE.md[/dim]")
+        console.print("[dim]Found existing .beads or AGENTS.md[/dim]")
         console.print("\nTo reinitialize, remove these files first:")
         if (project_path / ".beads").exists():
             console.print("  rm -rf .beads")
-        if (project_path / "CLAUDE.md").exists():
-            console.print("  rm CLAUDE.md")
+        if (project_path / "AGENTS.md").exists():
+            console.print("  rm AGENTS.md")
         sys.exit(1)
 
     # Check dependencies
@@ -222,7 +222,7 @@ esac
     build_sh_file.chmod(0o755)
     console.print("[bold]Created:[/bold] build.sh")
 
-    # Create CLAUDE.md
+    # Create AGENTS.md
     claude_md_content = f"""# {project_name}
 
 ## What
@@ -285,12 +285,11 @@ This project uses [beads](https://github.com/steveyegge/beads) for issue trackin
 - `bd create "title"` - Create new issue
 - `bd close <id>` - Close an issue
 
-**Note:** Do NOT create an AGENTS.md file. Workflow context is loaded via `bd prime`.
 """
 
-    claude_md_file = project_path / "CLAUDE.md"
-    claude_md_file.write_text(claude_md_content)
-    console.print("[bold]Created:[/bold] CLAUDE.md")
+    agents_md_file = project_path / "AGENTS.md"
+    agents_md_file.write_text(claude_md_content)
+    console.print("[bold]Created:[/bold] AGENTS.md")
 
     # Create .gitignore
     gitignore_content = """# Python
@@ -315,8 +314,6 @@ Thumbs.db
 .env
 *.log
 
-# Beads workflow - AGENTS.md is redundant (use bd prime instead)
-AGENTS.md
 """
 
     gitignore_file = project_path / ".gitignore"

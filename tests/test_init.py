@@ -21,15 +21,15 @@ class TestIsInitialized:
         (tmp_path / ".beads").mkdir()
         assert is_initialized(tmp_path) is True
 
-    def test_claude_md_means_initialized(self, tmp_path: Path) -> None:
-        """Directory with CLAUDE.md should be considered initialized."""
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+    def test_agents_md_means_initialized(self, tmp_path: Path) -> None:
+        """Directory with AGENTS.md should be considered initialized."""
+        (tmp_path / "AGENTS.md").write_text("# Project")
         assert is_initialized(tmp_path) is True
 
     def test_both_markers_means_initialized(self, tmp_path: Path) -> None:
         """Directory with both markers should be considered initialized."""
         (tmp_path / ".beads").mkdir()
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+        (tmp_path / "AGENTS.md").write_text("# Project")
         assert is_initialized(tmp_path) is True
 
     def test_other_files_not_initialized(self, tmp_path: Path) -> None:
@@ -55,12 +55,12 @@ class TestInitCommand:
         assert result.exit_code == 1
         assert "already initialized" in result.output
 
-    def test_init_fails_when_already_initialized_claude_md(
+    def test_init_fails_when_already_initialized_agents_md(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Init should fail if CLAUDE.md exists."""
+        """Init should fail if AGENTS.md exists."""
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "CLAUDE.md").write_text("# Existing")
+        (tmp_path / "AGENTS.md").write_text("# Existing")
 
         runner = CliRunner()
         result = runner.invoke(main, ["init"])
@@ -74,10 +74,10 @@ class TestInitCommand:
         """Init should show how to remove existing files."""
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".beads").mkdir()
-        (tmp_path / "CLAUDE.md").write_text("# Existing")
+        (tmp_path / "AGENTS.md").write_text("# Existing")
 
         runner = CliRunner()
         result = runner.invoke(main, ["init"])
 
         assert "rm -rf .beads" in result.output
-        assert "rm CLAUDE.md" in result.output
+        assert "rm AGENTS.md" in result.output

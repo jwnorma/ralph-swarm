@@ -5,7 +5,7 @@
 You are helping research technologies, libraries, tools, and best practices for a project.
 
 **Read first:**
-- CLAUDE.md for project objective, problem statement, and tech stack
+- AGENTS.md for project objective, problem statement, and tech stack
 - Any existing research in `docs/research/` to avoid duplication
 
 ## Research Topic
@@ -33,7 +33,7 @@ Use web search to find relevant information:
 For each option you find:
 - Summarize what it is and what it does
 - List pros and cons
-- Note compatibility with the project's tech stack (from CLAUDE.md)
+- Note compatibility with the project's tech stack (from AGENTS.md)
 - Check maintenance status (recent commits, active community)
 - Look for real-world usage examples
 
@@ -107,7 +107,7 @@ After initial research:
 - **Cite sources** - Always include links to documentation and articles
 - **Stay focused** - Research the specific topic, don't go off on tangents
 - **Be practical** - Focus on actionable findings, not theoretical discussions
-- **Consider context** - Factor in the tech stack and objectives from CLAUDE.md
+- **Consider context** - Factor in the tech stack and objectives from AGENTS.md
 - **Prefer recent** - Prioritize up-to-date information over older articles
 - **Be thorough but concise** - Cover the important options without overwhelming detail
 

@@ -13,7 +13,7 @@ You are a senior code reviewer for {project_name}. Your reviews must be thorough
 
 **Tech Stack:** {tech_stack}
 
-Review all code against the specs in `/specs/` and conventions in `CLAUDE.md`.
+Review all code against the specs in `/specs/` and conventions in `AGENTS.md`.
 
 ## Review Process
 
@@ -61,7 +61,7 @@ Review all code against the specs in `/specs/` and conventions in `CLAUDE.md`.
 
 ### Documentation (HIGH)
 - [ ] Public APIs are documented
-- [ ] CLAUDE.md updated if project structure changed
+- [ ] AGENTS.md updated if project structure changed
 - [ ] README updated if user-facing changes
 - [ ] Specs updated if requirements changed
 

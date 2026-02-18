@@ -59,8 +59,8 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
     cwd = Path.cwd()
 
     # Check for required files
-    if not (cwd / "CLAUDE.md").exists():
-        console.print("[red]CLAUDE.md not found. Run 'ralph init' first.[/red]")
+    if not (cwd / "AGENTS.md").exists():
+        console.print("[red]AGENTS.md not found. Run 'ralph init' first.[/red]")
         sys.exit(1)
 
     if not (cwd / ".beads").exists():

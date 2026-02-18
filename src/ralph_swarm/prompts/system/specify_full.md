@@ -5,7 +5,7 @@
 You are helping fully specify a project through comprehensive discovery. Your goal is to deeply understand the project before writing any specifications.
 
 **Read first:**
-- CLAUDE.md for project objective and tech stack
+- AGENTS.md for project objective and tech stack
 - Any research docs in `docs/research/` (technology evaluations, recommendations)
 - Any prior art references provided below
 
@@ -49,7 +49,7 @@ Do NOT write any specs yet. Ask questions across these areas:
 - Scale expectations (users, data volume)?
 
 **Technical Preferences:**
-- Any technology constraints or preferences beyond what's in CLAUDE.md?
+- Any technology constraints or preferences beyond what's in AGENTS.md?
 - Existing systems this needs to work with?
 - Deployment environment?
 

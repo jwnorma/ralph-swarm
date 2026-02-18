@@ -92,22 +92,22 @@ class TestBuildPriorArtSection:
 class TestSpecifyCommand:
     """Tests for the specify CLI command."""
 
-    def test_specify_requires_claude_md(
+    def test_specify_requires_agents_md(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Specify should fail without CLAUDE.md."""
+        """Specify should fail without AGENTS.md."""
         monkeypatch.chdir(tmp_path)
 
         runner = CliRunner()
         result = runner.invoke(main, ["specify", "--dry-run"])
 
         assert result.exit_code == 1
-        assert "CLAUDE.md not found" in result.output
+        assert "AGENTS.md not found" in result.output
 
     def test_specify_dry_run_initial(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Dry run should show initial prompt when no v0 exists (iterative mode)."""
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+        (tmp_path / "AGENTS.md").write_text("# Project")
 
         runner = CliRunner()
         # Select iterative mode (option 1)
@@ -119,7 +119,7 @@ class TestSpecifyCommand:
     def test_specify_full_flag(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """--full flag should trigger full specification mode."""
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+        (tmp_path / "AGENTS.md").write_text("# Project")
 
         runner = CliRunner()
         result = runner.invoke(main, ["specify", "--dry-run", "--full"])
@@ -132,7 +132,7 @@ class TestSpecifyCommand:
     ) -> None:
         """Selecting option 2 should trigger full specification mode."""
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+        (tmp_path / "AGENTS.md").write_text("# Project")
 
         runner = CliRunner()
         # Select full mode (option 2)
@@ -146,7 +146,7 @@ class TestSpecifyCommand:
     ) -> None:
         """Specify should create specs directory if missing."""
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+        (tmp_path / "AGENTS.md").write_text("# Project")
 
         runner = CliRunner()
         # Use dry-run and --full to avoid interactive prompts

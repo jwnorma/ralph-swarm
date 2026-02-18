@@ -443,8 +443,8 @@ def build_cmd(
         stop_file.unlink()
 
     # Check for required files
-    if not (cwd / "CLAUDE.md").exists():
-        console.print("[red]CLAUDE.md not found. Run 'ralph init' first.[/red]")
+    if not (cwd / "AGENTS.md").exists():
+        console.print("[red]AGENTS.md not found. Run 'ralph init' first.[/red]")
         sys.exit(1)
 
     if not (cwd / ".beads").exists():

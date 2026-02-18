@@ -379,7 +379,7 @@ class TestBuildClearsStopFile:
         stop_file = tmp_path / STOP_FILE
         stop_file.touch()
 
-        # build_cmd exits early because CLAUDE.md is missing, but the
+        # build_cmd exits early because AGENTS.md is missing, but the
         # stop file cleanup happens before that check
         from ralph_swarm.commands.build import build_cmd
 

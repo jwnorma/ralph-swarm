@@ -59,7 +59,7 @@ Ralph Swarm follows a five-stage workflow that takes a project from idea to impl
          │              │                │               │              │
          ▼              ▼                ▼               ▼              ▼
     Project setup   Research docs   Spec documents   Beads issues   Working code
-    CLAUDE.md       docs/research/  in specs/        (epics/tasks)  Git commits
+    AGENTS.md       docs/research/  in specs/        (epics/tasks)  Git commits
     Subagents       (optional)      Review rules     Dependencies   ADRs
 
                                                        ┌────────────────────────┐
@@ -98,7 +98,7 @@ Ralph Swarm follows a five-stage workflow that takes a project from idea to impl
 
 | Output | Location | Description |
 |--------|----------|-------------|
-| `CLAUDE.md` | Project root | Project context for Claude agents |
+| `AGENTS.md` | Project root | Project context for Claude agents |
 | `specs/` | Directory | Empty directory for specifications |
 | `adr/` | Directory | Empty directory for Architecture Decision Records |
 | `.beads/` | Directory | Beads issue tracking database |
@@ -164,7 +164,7 @@ What tech stack will you use?
 
 | Input | Source | Description |
 |-------|--------|-------------|
-| `CLAUDE.md` | Project root | Project context for relevant research |
+| `AGENTS.md` | Project root | Project context for relevant research |
 | Topic | User prompt | What to research (e.g., "authentication libraries") |
 | Goal | User prompt | What to learn/decide (e.g., "choose best option") |
 
@@ -251,7 +251,7 @@ New research created:
 #### What It Does
 
 1. Launches an interactive Claude session
-2. Analyzes CLAUDE.md and any prior art references
+2. Analyzes AGENTS.md and any prior art references
 3. Works with user to define V0 (minimum viable) scope
 4. Creates specification documents
 5. Updates code-reviewer with project-specific rules
@@ -268,7 +268,7 @@ New research created:
 
 | Input | Source | Description |
 |-------|--------|-------------|
-| `CLAUDE.md` | Project root | Project context and objectives |
+| `AGENTS.md` | Project root | Project context and objectives |
 | Prior art references | User prompt | URLs/repos for inspiration |
 | Existing specs | `specs/` | Previous specifications (incremental mode) |
 
@@ -367,7 +367,7 @@ New specs created:
 
 | Input | Source | Description |
 |-------|--------|-------------|
-| `CLAUDE.md` | Project root | Project context |
+| `AGENTS.md` | Project root | Project context |
 | Spec files | `specs/` | Requirements to implement |
 | Existing code | `src/`, etc. | Current implementation state |
 | Existing issues | `.beads/` | Previously created work items |
@@ -520,7 +520,7 @@ Ready issues:
 | Input | Source | Description |
 |-------|--------|-------------|
 | Ready tasks | `.beads/` | Unassigned tasks with satisfied dependencies |
-| `CLAUDE.md` | Project root | Build/test instructions |
+| `AGENTS.md` | Project root | Build/test instructions |
 | `adr/` | Directory | Existing architectural decisions |
 | Existing code | Project | Current implementation |
 
@@ -712,7 +712,7 @@ Initialize a ralph-swarm project in the current directory:
 - Define objective and problem statement
 - Choose tech stack
 - Initialize git and beads
-- Create CLAUDE.md scaffold
+- Create AGENTS.md scaffold
 
 Fails fast if the project is already initialized.
 

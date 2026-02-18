@@ -27,8 +27,8 @@ class TestStatusCommand:
     def test_status_requires_beads_directory(self, tmp_path: Path, monkeypatch) -> None:
         """Status should check for .beads directory."""
         monkeypatch.chdir(tmp_path)
-        # Create CLAUDE.md but not .beads
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+        # Create AGENTS.md but not .beads
+        (tmp_path / "AGENTS.md").write_text("# Project")
 
         runner = CliRunner()
         result = runner.invoke(main, ["status"])
@@ -43,7 +43,7 @@ class TestStatusEscaping:
     def _setup_project(self, tmp_path: Path) -> None:
         """Set up a minimal ralph-swarm project."""
         (tmp_path / ".beads").mkdir()
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+        (tmp_path / "AGENTS.md").write_text("# Project")
 
     def _mock_subprocess_run(self, issues: list[dict], ready_issues: list[dict] | None = None):
         """Create a mock for subprocess.run that returns beads data."""
@@ -268,7 +268,7 @@ class TestInProgressDisplay:
     def _setup_project(self, tmp_path: Path) -> None:
         """Set up a minimal ralph-swarm project."""
         (tmp_path / ".beads").mkdir()
-        (tmp_path / "CLAUDE.md").write_text("# Project")
+        (tmp_path / "AGENTS.md").write_text("# Project")
 
     def _mock_subprocess_run(self, issues: list[dict], ready_issues: list[dict] | None = None):
         """Create a mock for subprocess.run that returns beads data."""

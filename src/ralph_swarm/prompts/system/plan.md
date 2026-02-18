@@ -4,7 +4,7 @@
 
 1. Run `bd prime` to load current workflow context
 2. Run `bd ready --json` to see existing issues
-3. Study CLAUDE.md for project context
+3. Study AGENTS.md for project context
 4. Read specs/ directory for requirements
 
 ## Your Task
