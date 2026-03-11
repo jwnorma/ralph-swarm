@@ -51,7 +51,7 @@ def get_issues(cwd: Path, status_filter: str | None = None) -> list[dict]:
 def get_ready_issues(cwd: Path) -> list[dict]:
     """Get ready issues from beads."""
     result = subprocess.run(  # noqa: S603, S607
-        ["bd", "ready", "--json"],
+        ["bd", "ready", "--json", "--limit", "0"],
         capture_output=True,
         text=True,
         cwd=cwd,

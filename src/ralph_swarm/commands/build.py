@@ -258,7 +258,7 @@ def get_worker_prompt(worker_id: str, issue_id: str | None = None) -> str:
 def get_work_status(cwd: Path) -> dict:
     """Get current work status from beads."""
     result = subprocess.run(  # noqa: S603, S607
-        ["bd", "ready", "--json"],
+        ["bd", "ready", "--json", "--limit", "0"],
         capture_output=True,
         text=True,
         cwd=cwd,
@@ -783,7 +783,7 @@ while true; do
 
     # Filter to unassigned client-side because bd ready --unassigned
     # does not reliably exclude assigned issues
-    all_json=$(bd ready --json 2>/dev/null)
+    all_json=$(bd ready --json --limit 0 2>/dev/null)
     unassigned_json=$(echo "$all_json" | \\
         jq -c '[.[] | select(.assignee == null or .assignee == "")]' 2>/dev/null)
     # Default to empty array if jq failed (e.g. invalid input)

@@ -192,7 +192,7 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
             console.print(f"[green]Created {created} new issue(s)[/green]")
 
         console.print("\n[bold]Ready issues:[/bold]")
-        subprocess.run(["bd", "ready"], cwd=cwd)  # noqa: S603, S607
+        subprocess.run(["bd", "ready", "--limit", "0"], cwd=cwd)  # noqa: S603, S607
 
     console.print(
         Panel.fit(

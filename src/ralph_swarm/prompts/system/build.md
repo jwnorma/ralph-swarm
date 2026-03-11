@@ -21,7 +21,7 @@
    - Read the epic description and specs
    - Break into 5-10 concrete, actionable tasks
    - Create tasks: `bd create "Task title" -t task -p <priority> --description "..."`
-   - Link to epic: `bd dep add <task-id> --parent <epic-id>`
+   - Link to epic: `bd update <task-id> --parent <epic-id>`
    - Close epic: `bd close <epic-id> --reason "Decomposed into N tasks"`
    - Skip to step 6 (code review)
 

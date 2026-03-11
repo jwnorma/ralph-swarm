@@ -30,7 +30,7 @@ Add a structured work breakdown for the new feature **{feature}** to the existin
    - **The epic MUST include a documentation task**
 
 4. **Link dependencies:**
-   - `bd dep add <child> --parent <epic>` (link task to epic)
+   - `bd update <child> --parent <epic>` (link task to epic)
    - `bd dep add <blocker> --blocks <blocked>` (sequential dependencies)
    - If this feature depends on V0 epics, link them: `bd dep add <v0-epic-id> --blocks <this-epic-id>`
 

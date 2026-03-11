@@ -29,7 +29,7 @@ Analyze the project and create a structured work breakdown:
    - **Every epic MUST include a documentation task** to ensure the feature is properly documented (README, API docs, usage examples, etc.)
 
 4. **Link dependencies:**
-   - `bd dep add <child> --parent <epic>` (link task to epic)
+   - `bd update <child> --parent <epic>` (link task to epic)
    - `bd dep add <blocker> --blocks <blocked>` (sequential dependencies)
 
 5. **Prioritize:**
