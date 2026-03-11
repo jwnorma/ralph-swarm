@@ -55,5 +55,25 @@ Every epic must include a documentation task. Documentation tasks should:
 
 ## Output
 
-After creating issues, run `bd ready` to verify the dependency graph looks correct.
+After creating issues:
+
+1. Run `bd ready` to verify the dependency graph looks correct.
+2. Write a plan summary to `specs/plan-v0.md` with the following structure:
+
+```markdown
+# V0 Plan Summary
+
+## Epics
+- <epic-id>: <Epic Name> — <one-line description>
+- ...
+
+## Scope
+<Brief description of what V0 covers and what is explicitly out of scope>
+
+## Architecture Notes
+<Any key implementation decisions or sequencing notes from the planning>
+```
+
+This file allows future incremental plans to understand what has already been planned without re-reading all issues.
+
 Summarize what you created.

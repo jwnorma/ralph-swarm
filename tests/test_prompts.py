@@ -10,7 +10,7 @@ class TestLoadPrompt:
 
     def test_load_plan_prompt(self) -> None:
         """Should load the plan prompt."""
-        prompt = load_prompt("system/plan")
+        prompt = load_prompt("system/plan_initial")
         assert "# Ralph Planning Mode" in prompt
         assert "bd prime" in prompt
 

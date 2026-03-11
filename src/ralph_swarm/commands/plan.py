@@ -8,12 +8,19 @@ import click
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
 from rich.spinner import Spinner
 from rich.table import Table
 
 from ralph_swarm.prompts import load_prompt
 
 console = Console()
+
+
+def get_plan_status(cwd: Path) -> dict:
+    """Check whether an initial plan has already been run."""
+    plan_v0 = cwd / "specs" / "plan-v0.md"
+    return {"has_plan_v0": plan_v0.exists()}
 
 
 def get_beads_summary(cwd: Path) -> dict[str, int]:
@@ -67,10 +74,6 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
         console.print("[red]Beads not initialized. Run 'ralph init' first.[/red]")
         sys.exit(1)
 
-    console.print(
-        Panel.fit("[bold blue]Ralph Swarm[/bold blue] - Planning Mode", subtitle=f"Model: {model}")
-    )
-
     # Show current state
     summary = get_beads_summary(cwd)
     if summary:
@@ -84,8 +87,42 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
         console.print(table)
         console.print()
 
+    # Determine mode
+    plan_status = get_plan_status(cwd)
+    feature = None
+
+    if plan_status["has_plan_v0"]:
+        # Initial plan already exists — ask if adding a new feature
+        console.print("[bold]Existing plan found:[/bold] specs/plan-v0.md\n")
+
+        if Confirm.ask("Add a new feature to the plan? (No to re-run the initial plan)"):
+            feature = Prompt.ask("Feature name")
+            mode = "incremental"
+            mode_label = f"Add Feature: {feature}"
+        else:
+            mode = "initial"
+            mode_label = "Re-run Initial Plan"
+    else:
+        mode = "initial"
+        mode_label = "Initial Plan"
+
+    console.print(
+        Panel.fit(
+            "[bold blue]Ralph Swarm[/bold blue] - Planning Mode",
+            subtitle=f"{mode_label} | Model: {model}",
+        )
+    )
+
     # Load prompt
-    plan_prompt = load_prompt("system/plan")
+    if mode == "incremental":
+        prompt_template = load_prompt("system/plan_incremental")
+        # Derive a likely spec filename from the feature name
+        feature_file = feature.lower().replace(" ", "-") + ".md"
+        plan_prompt = prompt_template.replace("{feature}", feature).replace(
+            "{feature_file}", feature_file
+        )
+    else:
+        plan_prompt = load_prompt("system/plan_initial")
 
     if dry_run:
         console.print("[bold]Prompt that would be sent:[/bold]")
