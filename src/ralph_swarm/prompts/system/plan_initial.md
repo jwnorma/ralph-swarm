@@ -23,10 +23,11 @@ Analyze the project and create a structured work breakdown:
    - Include acceptance criteria in the description
 
 3. **Break down Epics into Stories/Tasks:**
-   - `bd create "Task description" -t task -p medium --description "..."`
+   - `bd create "Task description" -t task -p medium --description "..." --acceptance "..."`
    - Tasks should be small, focused, and actionable
    - Aim for tasks that take 1-2 hours of work
    - **Every epic MUST include a documentation task** to ensure the feature is properly documented (README, API docs, usage examples, etc.)
+   - **If the approach to a task is unclear, create a Discovery task first** (see Discovery Tasks below)
 
 4. **Link dependencies:**
    - `bd update <child> --parent <epic>` (link task to epic)
@@ -36,6 +37,34 @@ Analyze the project and create a structured work breakdown:
    - Critical path items should be high priority
    - Foundation/infrastructure before features
    - Tests alongside implementation
+
+## Verification & Acceptance
+
+Every issue (epic and task) must include clear verification criteria in the `--acceptance` field:
+- **Unit/integration tests:** "All unit tests pass; integration test covers the happy path and error case"
+- **CLI behavior:** "Running `cmd --flag` produces expected output; error messages are user-friendly"
+- **API contract:** "Endpoint returns correct schema; error codes match spec"
+- **State change:** "Database record updated; downstream systems notified"
+
+Use the `--acceptance` flag on `bd create` and `bd update`:
+```
+bd create "Task title" -t task --description "What to build" --acceptance "How to verify it's done"
+```
+
+## Discovery Tasks
+
+When the right approach to a task is unknown or requires investigation before implementation, create a **Discovery task** instead of guessing:
+
+```
+bd create "Discover: <topic>" -t task -p high \
+  --description "Research and document the best approach for <topic>. Output: a decision or ADR that unblocks subsequent tasks." \
+  --acceptance "Approach documented; linked implementation tasks unblocked"
+```
+
+- Name it `Discover: <topic>` to make its purpose obvious
+- Its output should be a written decision (ADR, notes in the issue, or updated spec) — not code
+- Link implementation tasks as blocked by the discovery: `bd dep add <discovery-id> --blocks <impl-task-id>`
+- Keep discovery tasks small — they should answer one question, not design a whole system
 
 ## Documentation Requirements
 
