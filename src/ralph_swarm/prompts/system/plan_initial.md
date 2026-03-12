@@ -53,18 +53,28 @@ bd create "Task title" -t task --description "What to build" --acceptance "How t
 
 ## Discovery Tasks
 
-When the right approach to a task is unknown or requires investigation before implementation, create a **Discovery task** instead of guessing:
+When the right approach to a task is unknown or requires investigation before implementation, create a **Discovery task** as the first child of the epic instead of guessing:
 
 ```
 bd create "Discover: <topic>" -t task -p high \
-  --description "Research and document the best approach for <topic>. Output: a decision or ADR that unblocks subsequent tasks." \
-  --acceptance "Approach documented; linked implementation tasks unblocked"
+  --description "Research and document the best approach for <topic>. When complete, update the descriptions and acceptance criteria of the sibling tasks in this epic with the findings." \
+  --acceptance "Approach documented; sibling implementation tasks updated with concrete details"
+bd update <discovery-id> --parent <epic-id>
 ```
 
-- Name it `Discover: <topic>` to make its purpose obvious
-- Its output should be a written decision (ADR, notes in the issue, or updated spec) — not code
-- Link implementation tasks as blocked by the discovery: `bd dep add <discovery-id> --blocks <impl-task-id>`
-- Keep discovery tasks small — they should answer one question, not design a whole system
+Create the implementation tasks as placeholders under the same epic, then block them on the discovery:
+```
+bd create "Implement: <thing>" -t task -p medium \
+  --description "TBD — pending discovery. See Discover: <topic> for details once complete." \
+  --acceptance "TBD — to be filled in by discovery task"
+bd update <impl-id> --parent <epic-id>
+bd dep add <discovery-id> --blocks <impl-id>
+```
+
+Rules:
+- Discovery is always a child of the epic, sequenced first
+- Its output is a **written update to sibling tasks** — not code; the worker closes the discovery by running `bd update <impl-id> --description "..." --acceptance "..."` on each blocked task
+- Keep it focused — one discovery per unknown, not a design-everything task
 
 ## Documentation Requirements
 

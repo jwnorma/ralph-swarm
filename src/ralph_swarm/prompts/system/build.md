@@ -25,7 +25,15 @@
    - Close epic: `bd close <epic-id> --reason "Decomposed into N tasks"`
    - Skip to step 6 (code review)
 
-3. **If you claimed a task/bug/feature:**
+3. **If you claimed a `Discover:` task:**
+   - Research the question thoroughly (read code, docs, specs; run experiments if needed)
+   - Document the decision/approach in the issue notes or an ADR
+   - **Update every sibling task in the epic** that was blocked on this discovery:
+     `bd update <sibling-id> --description "..." --acceptance "..."` with the concrete findings
+   - Close this task: `bd close <id> --reason "Approach decided: <summary>"`
+   - Skip to step 8 (no code review or are-we-done needed)
+
+4. **If you claimed a task/bug/feature:**
    - Search codebase before implementing (delegate to Explore subagent for complex searches)
    - Check `adr/` for relevant architectural decisions
    - Implement the issue fully (no placeholders)
