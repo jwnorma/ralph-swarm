@@ -34,7 +34,7 @@ def extract_bead_id(full_id: str) -> str:
 
 def get_issues(cwd: Path, status_filter: str | None = None) -> list[dict]:
     """Get issues from beads."""
-    cmd = ["bd", "list", "--json", "--all", "--limit", "0"]
+    cmd = ["bd", "list", "--json", "--flat", "--all", "--limit", "0"]
     if status_filter:
         cmd.extend(["--status", status_filter])
 
@@ -116,7 +116,7 @@ def status_cmd(verbose: bool, tree: bool) -> None:
 
     for issue in all_issues:
         status = issue.get("status", "open")
-        issue_type = issue.get("type", "task")
+        issue_type = issue.get("issue_type", "task")
 
         status_counts[status] = status_counts.get(status, 0) + 1
         type_counts[issue_type] = type_counts.get(issue_type, 0) + 1
@@ -180,7 +180,7 @@ def status_cmd(verbose: bool, tree: bool) -> None:
 
             ready_table.add_row(
                 extract_bead_id(issue.get("id", "")),
-                escape(str(issue.get("type", "task"))),
+                escape(str(issue.get("issue_type", "task"))),
                 priority_display,
                 escape(str(issue.get("title", ""))[:40]),
                 escape(str(issue.get("assignee") or "-")),
@@ -205,7 +205,7 @@ def status_cmd(verbose: bool, tree: bool) -> None:
         for issue in in_progress_issues:
             progress_table.add_row(
                 extract_bead_id(issue.get("id", "")),
-                escape(str(issue.get("type", "task"))),
+                escape(str(issue.get("issue_type", "task"))),
                 escape(str(issue.get("title", ""))[:50]),
                 escape(str(issue.get("assignee") or "-")),
             )
@@ -245,7 +245,7 @@ def status_cmd(verbose: bool, tree: bool) -> None:
             verbose_table.add_row(
                 extract_bead_id(issue.get("id", "")),
                 f"[{status_color}]{escape(issue_status)}[/{status_color}]",
-                escape(str(issue.get("type", "task"))),
+                escape(str(issue.get("issue_type", "task"))),
                 escape(str(issue.get("priority", "medium"))),
                 escape(str(issue.get("title", ""))[:50]),
             )
@@ -298,7 +298,7 @@ def show_issue_tree(issues: list[dict]) -> None:
             child = issue_map.get(child_id, {})
             status = str(child.get("status", "open"))
             status_icon = {"open": "○", "in_progress": "◐", "closed": "●"}.get(status, "○")
-            issue_type = escape(str(child.get("type", "task")))
+            issue_type = escape(str(child.get("issue_type", "task")))
             title = escape(str(child.get("title", ""))[:40])
             child_tree = parent_tree.add(f"{status_icon} \\[{issue_type}] {title}")
             add_children(child_tree, child_id)
@@ -307,7 +307,7 @@ def show_issue_tree(issues: list[dict]) -> None:
         issue = issue_map.get(root_id, {})
         status = str(issue.get("status", "open"))
         status_icon = {"open": "○", "in_progress": "◐", "closed": "●"}.get(status, "○")
-        issue_type = escape(str(issue.get("type", "task")))
+        issue_type = escape(str(issue.get("issue_type", "task")))
         title = escape(str(issue.get("title", ""))[:40])
         root_tree = tree.add(f"{status_icon} \\[{issue_type}] {title}")
         add_children(root_tree, root_id)
