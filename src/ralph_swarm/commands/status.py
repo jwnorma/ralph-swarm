@@ -213,6 +213,26 @@ def status_cmd(verbose: bool, tree: bool) -> None:
         console.print(progress_table)
         console.print()
 
+    # Merge conflict history
+    conflict_log = cwd / "logs" / "merge-conflicts.log"
+    if conflict_log.exists():
+        try:
+            lines = conflict_log.read_text().splitlines()
+            conflicts = [json.loads(line) for line in lines if line.strip()]
+        except (json.JSONDecodeError, OSError):
+            conflicts = []
+        if conflicts:
+            console.print(f"[yellow]Merge conflicts (all-time): {len(conflicts)}[/yellow]")
+            for c in conflicts[-5:]:
+                console.print(
+                    f"  [dim]{c.get('timestamp', '?')}[/dim] "
+                    f"[bold]{c.get('worker', '?')}[/bold] → {c.get('issue', '?')} "
+                    f"[dim]({c.get('session', '?')})[/dim]"
+                )
+            if len(conflicts) > 5:
+                console.print(f"  [dim]... and {len(conflicts) - 5} earlier[/dim]")
+            console.print()
+
     # Check for running workers
     workers = check_running_workers(cwd)
     if workers:

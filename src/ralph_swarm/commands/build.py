@@ -584,8 +584,16 @@ def run_single_worker_loop(
                 iteration += 1
                 continue
 
-            # Pick first unassigned issue (prioritized by beads)
-            unassigned_issues = [i for i in status["issues"] if not i.get("assignee")]
+            # Prefer non-epic tasks; fall back to epics for decomposition
+            unassigned_issues = [
+                i for i in status["issues"]
+                if not i.get("assignee") and i.get("issue_type") != "epic"
+            ]
+            if not unassigned_issues:
+                unassigned_issues = [
+                    i for i in status["issues"]
+                    if not i.get("assignee") and i.get("issue_type") == "epic"
+                ]
             if not unassigned_issues:
                 idle_count += 1
                 console.print(
@@ -726,6 +734,7 @@ def run_swarm(
 
         script_content = f"""#!/bin/bash
 export BD_ACTOR="{worker_id}"
+export BEADS_DIR="{cwd}/.beads"
 cd "{work_dir}"
 
 # Random initial delay to reduce startup contention (0-3 seconds)
@@ -767,6 +776,8 @@ merge_to_main() {{
         else
             echo "Merge conflict on {worker_id}. Aborting merge." >> "{log_path}"
             git -C "$MAIN_REPO" merge --abort >> "{log_path}" 2>&1
+            # Reset worktree to main so next task starts clean
+            git -C "{work_dir}" reset --hard main >> "{log_path}" 2>&1
             exit 1
         fi
     ) 200>"$MERGE_LOCK"
@@ -784,13 +795,24 @@ while true; do
     # Filter to unassigned client-side because bd ready --unassigned
     # does not reliably exclude assigned issues
     all_json=$(bd ready --json --limit 0 2>/dev/null)
-    unassigned_json=$(echo "$all_json" | \\
-        jq -c '[.[] | select(.assignee == null or .assignee == "")]' 2>/dev/null)
-    # Default to empty array if jq failed (e.g. invalid input)
+
+    # Prefer non-epic tasks; fall back to epics for decomposition
+    _f='(.assignee == null or .assignee == "") and .issue_type != "epic"'
+    unassigned_json=$(echo "$all_json" | jq -c "[.[] | select($_f)]" 2>/dev/null)
     if ! echo "$unassigned_json" | jq empty 2>/dev/null; then
         unassigned_json="[]"
     fi
     unassigned_count=$(echo "$unassigned_json" | jq 'length' 2>/dev/null || echo "0")
+
+    if [ "$unassigned_count" -eq 0 ]; then
+        # No tasks — check for epics to decompose
+        _f='(.assignee == null or .assignee == "") and .issue_type == "epic"'
+        unassigned_json=$(echo "$all_json" | jq -c "[.[] | select($_f)]" 2>/dev/null)
+        if ! echo "$unassigned_json" | jq empty 2>/dev/null; then
+            unassigned_json="[]"
+        fi
+        unassigned_count=$(echo "$unassigned_json" | jq 'length' 2>/dev/null || echo "0")
+    fi
 
     if [ "$unassigned_count" -eq 0 ]; then
         check_idle_shutdown "No unassigned work"
@@ -857,8 +879,16 @@ PROMPT_EOF
 
     # Merge completed work back to main
     if ! merge_to_main; then
-        echo "Merge conflict — stopping worker {worker_id}" >> "{log_path}"
-        exit 1
+        echo "Merge failed for $issue_id — reopening issue and continuing" >> "{log_path}"
+        bd update "$issue_id" --status open --assignee "" >> "{log_path}" 2>&1
+        # Record conflict for observability
+        _ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        _sess="{log_path.parent.name}"
+        _rec="{{\\"timestamp\\":\\"$_ts\\",\\"worker\\":\\"{worker_id}\\""
+        _rec="$_rec\\",\\"issue\\":\\"$issue_id\\",\\"session\\":\\"$_sess\\"}}"
+        echo "$_rec" >> "{cwd}/logs/merge-conflicts.log"
+        ((iteration++))
+        continue
     fi
 
     ((iteration++))
