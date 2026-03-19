@@ -16,7 +16,7 @@ console = Console()
 def get_in_progress_issues(cwd: Path) -> list[dict]:
     """Get all in-progress issues."""
     result = subprocess.run(  # noqa: S603, S607
-        ["bd", "list", "--status", "in_progress", "--json"],
+        ["bd", "list", "--status", "in_progress", "--json", "--flat", "--limit", "0"],
         capture_output=True,
         text=True,
         cwd=cwd,
