@@ -30,14 +30,16 @@ class TestGetWorkStatus:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = Mock(
                 returncode=0,
-                stdout=json.dumps([
-                    {
-                        "id": "issue-123",
-                        "title": "Fix bug",
-                        "status": "ready",
-                        "assignee": None,
-                    }
-                ]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "issue-123",
+                            "title": "Fix bug",
+                            "status": "ready",
+                            "assignee": None,
+                        }
+                    ]
+                ),
             )
             status = get_work_status(tmp_path)
             assert status["total"] == 1
@@ -50,14 +52,16 @@ class TestGetWorkStatus:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = Mock(
                 returncode=0,
-                stdout=json.dumps([
-                    {
-                        "id": "issue-123",
-                        "title": "Fix bug",
-                        "status": "in_progress",
-                        "assignee": "ralph-1",
-                    }
-                ]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "issue-123",
+                            "title": "Fix bug",
+                            "status": "in_progress",
+                            "assignee": "ralph-1",
+                        }
+                    ]
+                ),
             )
             status = get_work_status(tmp_path)
             assert status["total"] == 1
@@ -69,26 +73,28 @@ class TestGetWorkStatus:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = Mock(
                 returncode=0,
-                stdout=json.dumps([
-                    {
-                        "id": "issue-1",
-                        "title": "Task 1",
-                        "status": "ready",
-                        "assignee": None,
-                    },
-                    {
-                        "id": "issue-2",
-                        "title": "Task 2",
-                        "status": "in_progress",
-                        "assignee": "ralph-1",
-                    },
-                    {
-                        "id": "issue-3",
-                        "title": "Task 3",
-                        "status": "ready",
-                        "assignee": None,
-                    },
-                ]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "issue-1",
+                            "title": "Task 1",
+                            "status": "ready",
+                            "assignee": None,
+                        },
+                        {
+                            "id": "issue-2",
+                            "title": "Task 2",
+                            "status": "in_progress",
+                            "assignee": "ralph-1",
+                        },
+                        {
+                            "id": "issue-3",
+                            "title": "Task 3",
+                            "status": "ready",
+                            "assignee": None,
+                        },
+                    ]
+                ),
             )
             status = get_work_status(tmp_path)
             assert status["total"] == 3
@@ -100,20 +106,22 @@ class TestGetWorkStatus:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = Mock(
                 returncode=0,
-                stdout=json.dumps([
-                    {
-                        "id": "issue-1",
-                        "title": "Task 1",
-                        "status": "in_progress",
-                        "assignee": "ralph-1",
-                    },
-                    {
-                        "id": "issue-2",
-                        "title": "Task 2",
-                        "status": "in_progress",
-                        "assignee": "ralph-2",
-                    },
-                ]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "issue-1",
+                            "title": "Task 1",
+                            "status": "in_progress",
+                            "assignee": "ralph-1",
+                        },
+                        {
+                            "id": "issue-2",
+                            "title": "Task 2",
+                            "status": "in_progress",
+                            "assignee": "ralph-2",
+                        },
+                    ]
+                ),
             )
             status = get_work_status(tmp_path)
             assert status["total"] == 2
@@ -148,20 +156,22 @@ class TestGetWorkStatus:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = Mock(
                 returncode=0,
-                stdout=json.dumps([
-                    {
-                        "id": "issue-1",
-                        "title": "Task 1",
-                        "status": "ready",
-                        # No assignee field
-                    },
-                    {
-                        "id": "issue-2",
-                        "title": "Task 2",
-                        "status": "ready",
-                        "assignee": None,
-                    },
-                ]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "issue-1",
+                            "title": "Task 1",
+                            "status": "ready",
+                            # No assignee field
+                        },
+                        {
+                            "id": "issue-2",
+                            "title": "Task 2",
+                            "status": "ready",
+                            "assignee": None,
+                        },
+                    ]
+                ),
             )
             status = get_work_status(tmp_path)
             assert status["total"] == 2
@@ -172,14 +182,16 @@ class TestGetWorkStatus:
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = Mock(
                 returncode=0,
-                stdout=json.dumps([
-                    {
-                        "id": "issue-1",
-                        "title": "Task 1",
-                        "status": "ready",
-                        "assignee": "",
-                    },
-                ]),
+                stdout=json.dumps(
+                    [
+                        {
+                            "id": "issue-1",
+                            "title": "Task 1",
+                            "status": "ready",
+                            "assignee": "",
+                        },
+                    ]
+                ),
             )
             status = get_work_status(tmp_path)
             assert status["total"] == 1

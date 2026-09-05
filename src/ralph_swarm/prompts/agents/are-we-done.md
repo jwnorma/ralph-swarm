@@ -102,5 +102,6 @@ If no test command can be found or executed, return verdict: **UNABLE TO VERIFY*
 
 - Run from the project root directory
 - Zero exit code = PASS, non-zero = FAIL
+- An empty test run is NOT a pass: if the test command reports 0 tests collected or "no tests ran", return **UNABLE TO VERIFY** — a suite that executed nothing proves nothing
 - Include relevant error output for failures
 - Do NOT return READY TO COMPLETE if you couldn't run tests

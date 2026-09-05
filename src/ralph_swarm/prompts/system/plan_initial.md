@@ -2,10 +2,9 @@
 
 ## Context Loading
 
-1. Run `bd prime` to load current workflow context
-2. Run `bd ready --json` to see existing issues
-3. Study AGENTS.md for project context
-4. Read specs/ directory for requirements
+1. Run `bd ready --json` to see existing issues
+2. Study AGENTS.md for project context
+3. Read specs/ directory for requirements
 
 ## Your Task
 
@@ -18,12 +17,12 @@ Analyze the project and create a structured work breakdown:
    - Compare against specifications
 
 2. **Create Epics for major features:**
-   - `bd create "Epic: Feature Name" -t epic -p high --description "..."`
+   - `bd create "Epic: Feature Name" -t epic -p P1 --description "..."`
    - Each epic should represent a cohesive feature area
    - Include acceptance criteria in the description
 
 3. **Break down Epics into Stories/Tasks:**
-   - `bd create "Task description" -t task -p medium --description "..." --acceptance "..."`
+   - `bd create "Task description" -t task -p P2 --description "..." --acceptance "..."`
    - Tasks should be small, focused, and actionable
    - Aim for tasks that take 1-2 hours of work
    - **Every epic MUST include a documentation task** to ensure the feature is properly documented (README, API docs, usage examples, etc.)
@@ -31,7 +30,7 @@ Analyze the project and create a structured work breakdown:
 
 4. **Link dependencies:**
    - `bd update <child> --parent <epic>` (link task to epic)
-   - `bd dep add <blocker> --blocks <blocked>` (sequential dependencies)
+   - `bd dep <blocker> --blocks <blocked>` (sequential dependencies)
 
 5. **Prioritize:**
    - Critical path items should be high priority
@@ -56,7 +55,7 @@ bd create "Task title" -t task --description "What to build" --acceptance "How t
 When the right approach to a task is unknown or requires investigation before implementation, create a **Discovery task** as the first child of the epic instead of guessing:
 
 ```
-bd create "Discover: <topic>" -t task -p high \
+bd create "Discover: <topic>" -t task -p P1 \
   --description "Research and document the best approach for <topic>. When complete, update the descriptions and acceptance criteria of the sibling tasks in this epic with the findings." \
   --acceptance "Approach documented; sibling implementation tasks updated with concrete details"
 bd update <discovery-id> --parent <epic-id>
@@ -64,11 +63,11 @@ bd update <discovery-id> --parent <epic-id>
 
 Create the implementation tasks as placeholders under the same epic, then block them on the discovery:
 ```
-bd create "Implement: <thing>" -t task -p medium \
+bd create "Implement: <thing>" -t task -p P2 \
   --description "TBD — pending discovery. See Discover: <topic> for details once complete." \
   --acceptance "TBD — to be filled in by discovery task"
 bd update <impl-id> --parent <epic-id>
-bd dep add <discovery-id> --blocks <impl-id>
+bd dep <discovery-id> --blocks <impl-id>
 ```
 
 Rules:
@@ -79,7 +78,7 @@ Rules:
 ## Documentation Requirements
 
 Every epic must include a documentation task. Documentation tasks should:
-- Be created as: `bd create "Document: <Feature Name>" -t task -p medium`
+- Be created as: `bd create "Document: <Feature Name>" -t task -p P2`
 - Be linked as a child of the epic
 - Be scheduled after implementation tasks (blocked by them)
 - Cover: README updates, API documentation, usage examples, and any relevant guides

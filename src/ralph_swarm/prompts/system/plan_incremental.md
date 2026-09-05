@@ -2,11 +2,10 @@
 
 ## Context Loading
 
-1. Run `bd prime` to load current workflow context
-2. Read `specs/plan-v0.md` to understand what has already been planned
-3. Read the feature spec file for the feature being added
-4. Run `bd list --json` to see all existing issues (avoid duplicating them)
-5. Study AGENTS.md for project context
+1. Read `specs/plan-v0.md` to understand what has already been planned
+2. Read the feature spec file for the feature being added
+3. Run `bd list --json` to see all existing issues (avoid duplicating them)
+4. Study AGENTS.md for project context
 
 ## Your Task
 
@@ -20,11 +19,11 @@ Add a structured work breakdown for the new feature **{feature}** to the existin
    - Identify integration points with existing epics from `specs/plan-v0.md`
 
 2. **Create an Epic for this feature:**
-   - `bd create "Epic: {feature}" -t epic -p high --description "..."`
+   - `bd create "Epic: {feature}" -t epic -p P1 --description "..."`
    - Include acceptance criteria in the description
 
 3. **Break down the Epic into Tasks:**
-   - `bd create "Task description" -t task -p medium --description "..." --acceptance "..."`
+   - `bd create "Task description" -t task -p P2 --description "..." --acceptance "..."`
    - Tasks should be small, focused, and actionable
    - Aim for tasks that take 1-2 hours of work
    - **The epic MUST include a documentation task**
@@ -32,8 +31,8 @@ Add a structured work breakdown for the new feature **{feature}** to the existin
 
 4. **Link dependencies:**
    - `bd update <child> --parent <epic>` (link task to epic)
-   - `bd dep add <blocker> --blocks <blocked>` (sequential dependencies)
-   - If this feature depends on V0 epics, link them: `bd dep add <v0-epic-id> --blocks <this-epic-id>`
+   - `bd dep <blocker> --blocks <blocked>` (sequential dependencies)
+   - If this feature depends on V0 epics, link them: `bd dep <v0-epic-id> --blocks <this-epic-id>`
 
 5. **Prioritize:**
    - Consider how this feature fits into the existing backlog sequence
@@ -57,7 +56,7 @@ bd create "Task title" -t task --description "What to build" --acceptance "How t
 When the right approach to a task is unknown or requires investigation before implementation, create a **Discovery task** as the first child of the epic instead of guessing:
 
 ```
-bd create "Discover: <topic>" -t task -p high \
+bd create "Discover: <topic>" -t task -p P1 \
   --description "Research and document the best approach for <topic>. When complete, update the descriptions and acceptance criteria of the sibling tasks in this epic with the findings." \
   --acceptance "Approach documented; sibling implementation tasks updated with concrete details"
 bd update <discovery-id> --parent <epic-id>
@@ -65,11 +64,11 @@ bd update <discovery-id> --parent <epic-id>
 
 Create the implementation tasks as placeholders under the same epic, then block them on the discovery:
 ```
-bd create "Implement: <thing>" -t task -p medium \
+bd create "Implement: <thing>" -t task -p P2 \
   --description "TBD — pending discovery. See Discover: <topic> for details once complete." \
   --acceptance "TBD — to be filled in by discovery task"
 bd update <impl-id> --parent <epic-id>
-bd dep add <discovery-id> --blocks <impl-id>
+bd dep <discovery-id> --blocks <impl-id>
 ```
 
 Rules:
@@ -80,7 +79,7 @@ Rules:
 ## Documentation Requirements
 
 The epic must include a documentation task:
-- `bd create "Document: {feature}" -t task -p medium`
+- `bd create "Document: {feature}" -t task -p P2`
 - Linked as a child of the epic
 - Blocked by implementation tasks
 - Covers: README updates, API documentation, usage examples

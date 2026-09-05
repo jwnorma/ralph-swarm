@@ -2,12 +2,11 @@
 
 ## Context Loading
 
-1. Run `bd prime` to load current workflow context
-2. Study AGENTS.md for build/test instructions
+1. Study AGENTS.md for build/test instructions
 
 ## Your Task
 
-**NOTE:** If you see "ASSIGNED ISSUE: <id>" above, skip step 1 - you already have an assigned issue. Proceed directly to step 2.
+**NOTE:** If you see "ASSIGNED ISSUE: <id>" above, skip step 1 - you already have an assigned and claimed issue. Proceed to step 2 and follow the branch matching its type.
 
 1. **Pick ONE unassigned issue (SKIP if already assigned):**
    - Run `bd ready --unassigned --json` to see available work
@@ -20,10 +19,10 @@
    - Your task is to DECOMPOSE it, not implement it
    - Read the epic description and specs
    - Break into 5-10 concrete, actionable tasks
-   - Create tasks: `bd create "Task title" -t task -p <priority> --description "..."`
+   - Create tasks: `bd create "Task title" -t task -p <P0-P4> --description "..."`
    - Link to epic: `bd update <task-id> --parent <epic-id>`
    - Close epic: `bd close <epic-id> --reason "Decomposed into N tasks"`
-   - Skip to step 6 (code review)
+   - Skip to step 7 (Code Review)
 
 3. **If you claimed a `Discover:` task:**
    - Research the question thoroughly (read code, docs, specs; run experiments if needed)
@@ -31,7 +30,7 @@
    - **Update every sibling task in the epic** that was blocked on this discovery:
      `bd update <sibling-id> --description "..." --acceptance "..."` with the concrete findings
    - Close this task: `bd close <id> --reason "Approach decided: <summary>"`
-   - Skip to step 8 (no code review or are-we-done needed)
+   - Skip to step 9 (Complete) - no code review or are-we-done needed
 
 4. **If you claimed a task/bug/feature:**
    - Search codebase before implementing (delegate to Explore subagent for complex searches)
@@ -39,8 +38,8 @@
    - Implement the issue fully (no placeholders)
    - Run tests for that unit of code
 
-4. **When you discover bugs or follow-up work:**
-   - File new issue: `bd create "Title" -t bug -p <priority>`
+5. **When you discover bugs or follow-up work:**
+   - File new issue: `bd create "Title" -t bug -p <P0-P4>`
    - Link dependencies if needed
    - Continue with current task
 
@@ -50,7 +49,7 @@
    - Do NOT close implementation tasks as duplicate without doing the work
    - If you created a duplicate, close YOUR task and note which task covers it
 
-5. **After implementation - document architectural decisions (REQUIRED if applicable):**
+6. **After implementation - document architectural decisions (REQUIRED if applicable):**
    - Use the `adr` subagent if you did ANY of the following:
      - Added a new dependency or library
      - Chose between multiple valid approaches
@@ -58,21 +57,21 @@
      - Made a decision that affects system architecture
    - Examples: choosing BAML vs LangChain, PyJWT vs python-jose, REST vs GraphQL
    - Do NOT skip this step - undocumented decisions create confusion for future agents
-   - If no architectural decisions were made, proceed to step 6
+   - If no architectural decisions were made, proceed to step 7
 
-6. **After ADR (if any) - use the code-reviewer subagent:**
+7. **After ADR (if any) - use the code-reviewer subagent:**
    - Delegate to the `code-reviewer` subagent to review your changes
    - Address CRITICAL issues before proceeding
    - File WARNINGS as beads issues for later
 
-7. **Before marking complete - use the are-we-done subagent (REQUIRED):**
+8. **Before marking complete - use the are-we-done subagent (REQUIRED):**
    - Delegate to the `are-we-done` subagent to verify build/tests pass
    - Do NOT proceed until verdict is "READY TO COMPLETE"
    - If verdict is "UNABLE TO VERIFY", you must add missing build.sh commands first
    - If verdict is "NOT READY", fix the failures before continuing
    - Skipping this step or using manual verification is NOT acceptable
 
-8. **When complete:**
+9. **When complete:**
    - Close the issue: `bd close <id> --reason "Description"`
    - Commit changes: `git add -A && git commit -m "description"`
 
@@ -84,4 +83,5 @@
 - Always search before implementing
 - Update AGENTS.md if you learn something new
 - Make sure to document any architectural changes
-- **NEVER use the EnterPlanMode tool.** You are running non-interactively with no user to approve plans, so EnterPlanMode will cause you to exit without doing any work. Instead, plan your approach inline (read files, reason through the design) then proceed directly to implementation.
+- You are working in your own git worktree. Commit locally; the orchestrator merges your work back to main. NEVER push, rebase onto main, or merge branches yourself.
+- **You run NON-INTERACTIVELY - there is no user to answer questions or approve plans.** Do not use EnterPlanMode, ExitPlanMode, AskUserQuestion, or any tool that waits for user input. Plan your approach inline (read files, reason through the design) then proceed directly to implementation.

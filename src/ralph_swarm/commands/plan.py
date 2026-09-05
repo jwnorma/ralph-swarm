@@ -138,7 +138,8 @@ def plan_cmd(model: str, verbose: bool, dry_run: bool, iterations: int) -> None:
         cmd = [
             "claude",
             "--dangerously-skip-permissions",
-            "--model", model,
+            "--model",
+            model,
         ]
 
         if verbose:

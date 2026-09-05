@@ -333,14 +333,16 @@ def run_single_worker(
     """Run a single worker iteration. Returns: 0=no work, 1=worked, 2=error."""
     prompt = get_worker_prompt(worker_id, issue_id)
 
-    # Set BD_ACTOR environment for atomic claims
+    # Set actor env for atomic claims (BEADS_ACTOR on bd >=1.0; BD_ACTOR kept for bd 0.x)
     env = os.environ.copy()
     env["BD_ACTOR"] = worker_id
+    env["BEADS_ACTOR"] = worker_id
 
     cmd = [
         "claude",
         "--dangerously-skip-permissions",
-        "--model", model,
+        "--model",
+        model,
     ]
 
     if verbose or log_file:
@@ -586,12 +588,14 @@ def run_single_worker_loop(
 
             # Prefer non-epic tasks; fall back to epics for decomposition
             unassigned_issues = [
-                i for i in status["issues"]
+                i
+                for i in status["issues"]
                 if not i.get("assignee") and i.get("issue_type") != "epic"
             ]
             if not unassigned_issues:
                 unassigned_issues = [
-                    i for i in status["issues"]
+                    i
+                    for i in status["issues"]
                     if not i.get("assignee") and i.get("issue_type") == "epic"
                 ]
             if not unassigned_issues:
@@ -662,7 +666,9 @@ def run_single_worker_loop(
             # Check if Claude exited without completing the issue
             if _issue_still_in_progress(issue_id, work_dir):
                 _release_issue(
-                    issue_id, worker_id, work_dir,
+                    issue_id,
+                    worker_id,
+                    work_dir,
                     "Issue still in_progress after Claude exited.",
                     log_file,
                 )
@@ -734,6 +740,7 @@ def run_swarm(
 
         script_content = f"""#!/bin/bash
 export BD_ACTOR="{worker_id}"
+export BEADS_ACTOR="{worker_id}"
 export BEADS_DIR="{cwd}/.beads"
 cd "{work_dir}"
 

@@ -16,17 +16,16 @@ from ralph_swarm.commands.build import (
 )
 
 # Environment cleaned of git vars that leak from pre-commit hooks
-_CLEAN_ENV = {
-    k: v for k, v in os.environ.items()
-    if not k.startswith("GIT_")
-}
+_CLEAN_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     """Run a git command with test author config and clean env."""
     env_args = [
-        "-c", "user.name=Test",
-        "-c", "user.email=test@test.com",
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@test.com",
     ]
     result = subprocess.run(  # noqa: S603, S607
         ["git", *env_args, *args],
@@ -51,10 +50,12 @@ def _init_repo(tmp_path: Path) -> Path:
 
 def _clean_env(func):
     """Decorator to run test with clean git environment (no pre-commit hook vars)."""
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         with patch.dict(os.environ, _CLEAN_ENV, clear=True):
             return func(*args, **kwargs)
+
     return wrapper
 
 
@@ -134,8 +135,7 @@ class TestMergeWorkerToMain:
         # Main should be clean (merge was aborted) — ignore worktree artifacts
         status = _git(repo, "status", "--porcelain")
         non_worktree_changes = [
-            line for line in status.stdout.strip().splitlines()
-            if ".ralph-worktrees" not in line
+            line for line in status.stdout.strip().splitlines() if ".ralph-worktrees" not in line
         ]
         assert non_worktree_changes == []
 

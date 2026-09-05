@@ -97,9 +97,7 @@ def research_cmd(
         sys.exit(1)
 
     console.print(
-        Panel.fit(
-            "[bold blue]Ralph Swarm[/bold blue] - Research Mode", subtitle=f"Model: {model}"
-        )
+        Panel.fit("[bold blue]Ralph Swarm[/bold blue] - Research Mode", subtitle=f"Model: {model}")
     )
 
     # Check current research status
@@ -113,9 +111,7 @@ def research_cmd(
         console.print()
 
     # Gather research context interactively
-    context = (
-        {"topic": "<topic>", "goal": "<goal>"} if dry_run else gather_research_context()
-    )
+    context = {"topic": "<topic>", "goal": "<goal>"} if dry_run else gather_research_context()
 
     # Ensure docs/research directory exists
     research_dir = cwd / "docs" / "research"

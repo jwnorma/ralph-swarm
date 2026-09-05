@@ -25,7 +25,7 @@ Use web search to find relevant information:
 - Official documentation
 - Library comparisons and benchmarks
 - Best practices guides
-- Recent updates (prefer 2024-2025 content)
+- Recent updates (prefer content from the last 12-18 months)
 - Relevant MCP servers if applicable
 
 ### 2. Evaluate Options

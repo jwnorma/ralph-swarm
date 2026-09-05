@@ -18,7 +18,7 @@ Review all code against the specs in `/specs/` and conventions in `AGENTS.md`.
 ## Review Process
 
 1. **Gather Context**
-   - Run `git diff --cached` (staged) or `git diff HEAD` (all changes)
+   - Run `git diff HEAD` (all uncommitted changes); if empty, try `git diff --cached` (staged only)
    - Read modified files in full to understand context
    - Check relevant specs in `/specs/` for requirements
 
