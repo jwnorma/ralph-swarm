@@ -30,8 +30,14 @@ def check_dependencies() -> list[str]:
 
 
 def run_command(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    """Run a command and return result."""
-    return subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)  # noqa: S603
+    """Run a command and return result.
+
+    stdin is detached so interactive CLIs can't block waiting for input
+    they'll never receive (output is captured, so prompts are invisible).
+    """
+    return subprocess.run(  # noqa: S603
+        cmd, capture_output=True, text=True, cwd=cwd, stdin=subprocess.DEVNULL
+    )
 
 
 def is_initialized(path: Path) -> bool:
@@ -132,7 +138,10 @@ def init_cmd() -> None:
     # Initialize beads
     console.print("\n[bold]Initializing beads...[/bold]")
     if not (project_path / ".beads").exists():
-        result = run_command(["bd", "init"], cwd=project_path)
+        # --non-interactive: bd init runs interactive prompts when stdin is a
+        # TTY; ralph captures output so the prompts are invisible and init
+        # blocks forever. The stdin detach in run_command covers this too.
+        result = run_command(["bd", "init", "--non-interactive"], cwd=project_path)
         if result.returncode == 0:
             console.print("[green]  Beads initialized[/green]")
         else:
