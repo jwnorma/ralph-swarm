@@ -144,6 +144,64 @@ class TestMergeWorkerToMain:
         assert "ralph-1" in branches.stdout
 
     @_clean_env
+    def test_dirty_main_worktree_returns_dirty(self, tmp_path: Path) -> None:
+        """Uncommitted local change to a file the merge touches returns 'dirty'."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        # Worker edits a tracked file and commits on its branch
+        (wt / "README.md").write_text("worker change\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Worker change")
+
+        # Main has an uncommitted edit to the same file
+        (repo / "README.md").write_text("uncommitted local edit\n")
+
+        result = merge_worker_to_main(repo, "ralph-1")
+        assert result == "dirty"
+
+        # Git refused before starting: the local edit is untouched, no merge in progress
+        assert (repo / "README.md").read_text() == "uncommitted local edit\n"
+        assert not (repo / ".git" / "MERGE_HEAD").exists()
+
+        # Worker branch preserved
+        branches = _git(repo, "branch", "--list", "ralph-1")
+        assert "ralph-1" in branches.stdout
+
+    @_clean_env
+    def test_untracked_file_collision_returns_dirty(self, tmp_path: Path) -> None:
+        """Untracked file in main that the merge would create returns 'dirty'."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "feature.py").write_text("worker code\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Add feature")
+
+        # Same path exists untracked in main (e.g. an old stub)
+        (repo / "feature.py").write_text("old stub\n")
+
+        result = merge_worker_to_main(repo, "ralph-1")
+        assert result == "dirty"
+        assert (repo / "feature.py").read_text() == "old stub\n"
+
+    @_clean_env
+    def test_dirty_refusal_keeps_branch_recoverable(self, tmp_path: Path) -> None:
+        """After a dirty refusal, the worker branch still holds the commits."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "README.md").write_text("worker change\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Worker change")
+
+        (repo / "README.md").write_text("uncommitted local edit\n")
+        assert merge_worker_to_main(repo, "ralph-1") == "dirty"
+
+        log = _git(repo, "log", "ralph-1", "--oneline")
+        assert "Worker change" in log.stdout
+
+    @_clean_env
     def test_multiple_commits_merge(self, tmp_path: Path) -> None:
         """Multiple commits on worker branch all merge."""
         repo = _init_repo(tmp_path)

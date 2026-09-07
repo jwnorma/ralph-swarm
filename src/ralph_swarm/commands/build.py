@@ -117,7 +117,12 @@ def create_worktree(base_dir: Path, worker_id: str) -> Path:
 
 
 def merge_worker_to_main(base_dir: Path, worker_id: str) -> str:
-    """Merge worker branch back to main. Returns 'success', 'nothing', or 'conflict'.
+    """Merge worker branch back to main.
+
+    Returns 'success', 'nothing', 'conflict', or 'dirty'. 'dirty' means git
+    refused to start the merge because the main worktree has local changes
+    (or untracked files) the merge would overwrite — no merge happened and
+    the branch is preserved for a manual `git merge`.
 
     Uses file locking to serialize concurrent merges from multiple workers.
     """
@@ -145,12 +150,16 @@ def merge_worker_to_main(base_dir: Path, worker_id: str) -> str:
             cwd=base_dir,
         )
         if result.returncode != 0:
-            # Merge conflict — abort and preserve the branch
+            # Abort whatever git started (a no-op if it refused before merging)
             subprocess.run(  # noqa: S603, S607
                 ["git", "merge", "--abort"],
                 capture_output=True,
                 cwd=base_dir,
             )
+            if "would be overwritten by merge" in result.stderr:
+                # Dirty main worktree, not a conflict — show git's file list
+                console.print(f"[red]Merge refused for {worker_id}:[/red] {result.stderr.strip()}")
+                return "dirty"
             return "conflict"
 
         return "success"
@@ -681,6 +690,13 @@ def run_single_worker_loop(
                 if merge_result == "success":
                     console.print(f"[green]Merged {worker_id} to main[/green]")
                     reset_worker_branch(cwd, worker_id)
+                elif merge_result == "dirty":
+                    console.print(
+                        f"[red]Cannot merge {worker_id}: commit or stash the changes above in "
+                        f"the main worktree, then run `git merge {worker_id}`. "
+                        f"Branch preserved.[/red]"
+                    )
+                    break
                 elif merge_result == "conflict":
                     console.print(
                         f"[red]Merge conflict on {worker_id}. "
@@ -773,22 +789,51 @@ merge_to_main() {{
 
     echo "Merging {worker_id} to main..." >> "{log_path}"
 
-    # Use flock for serialized merges
-    (
-        flock -x 200
-        if git -C "$MAIN_REPO" merge "{worker_id}" --no-edit >> "{log_path}" 2>&1; then
-            echo "Merged {worker_id} to main successfully" >> "{log_path}"
-            # Reset worktree to main HEAD for next task
-            git -C "{work_dir}" reset --hard main >> "{log_path}" 2>&1
-        else
-            echo "Merge conflict on {worker_id}. Aborting merge." >> "{log_path}"
-            git -C "$MAIN_REPO" merge --abort >> "{log_path}" 2>&1
-            # Reset worktree to main so next task starts clean
-            git -C "{work_dir}" reset --hard main >> "{log_path}" 2>&1
-            exit 1
+    # Serialize merges with a mkdir lock — flock(1) is not available on macOS.
+    # A lock older than 10 minutes is stale (crashed worker) and gets stolen.
+    mkdir -p "$(dirname "$MERGE_LOCK.d")"
+    waited=0
+    while ! mkdir "$MERGE_LOCK.d" 2>/dev/null; do
+        if [ -n "$(find "$MERGE_LOCK.d" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
+            rm -rf "$MERGE_LOCK.d"
+            continue
         fi
-    ) 200>"$MERGE_LOCK"
-    return $?
+        waited=$((waited + 1))
+        if [ "$waited" -ge 120 ]; then
+            echo "Timed out waiting for merge lock; branch {worker_id} preserved" >> "{log_path}"
+            return 12
+        fi
+        sleep 1
+    done
+
+    merge_out=$(mktemp)
+    if git -C "$MAIN_REPO" merge "{worker_id}" --no-edit > "$merge_out" 2>&1; then
+        cat "$merge_out" >> "{log_path}"
+        echo "Merged {worker_id} to main successfully" >> "{log_path}"
+        rm -f "$merge_out"
+        rmdir "$MERGE_LOCK.d" 2>/dev/null
+        # Reset worktree to main HEAD for next task (safe: fully merged)
+        git -C "{work_dir}" reset --hard main >> "{log_path}" 2>&1
+        return 0
+    fi
+
+    # Merge refused or conflicted — abort in main and keep the worker branch
+    # intact. Resetting the worktree here would orphan the unmerged commits.
+    cat "$merge_out" >> "{log_path}"
+    if grep -q "would be overwritten by merge" "$merge_out"; then
+        echo "Main worktree has uncommitted/untracked files blocking the merge." >> "{log_path}"
+        echo "Commit or stash them, then run: git -C $MAIN_REPO merge {worker_id}" >> "{log_path}"
+        rc=11
+    else
+        echo "Merge conflict on {worker_id}." >> "{log_path}"
+        echo "Branch preserved for manual resolution:" >> "{log_path}"
+        echo "  git -C $MAIN_REPO merge {worker_id}" >> "{log_path}"
+        rc=10
+    fi
+    rm -f "$merge_out"
+    git -C "$MAIN_REPO" merge --abort >> "{log_path}" 2>&1
+    rmdir "$MERGE_LOCK.d" 2>/dev/null
+    return $rc
 }}
 
 while true; do
@@ -884,18 +929,24 @@ PROMPT_EOF
         exit 0
     fi
 
-    # Merge completed work back to main
-    if ! merge_to_main; then
-        echo "Merge failed for $issue_id — reopening issue and continuing" >> "{log_path}"
-        bd update "$issue_id" --status open --assignee "" >> "{log_path}" 2>&1
-        # Record conflict for observability
+    # Merge completed work back to main.
+    # Exit codes: 0 merged/nothing, 10 conflict, 11 dirty main tree, 12 lock timeout.
+    merge_to_main
+    merge_rc=$?
+    if [ "$merge_rc" -ne 0 ]; then
+        echo "Merge failed for $issue_id (rc=$merge_rc) — stopping worker" >> "{log_path}"
+        if [ "$merge_rc" -eq 10 ]; then
+            # The work did not land, so release the issue for a retry
+            bd update "$issue_id" --status open --assignee "" >> "{log_path}" 2>&1
+        fi
+        # Record for observability
         _ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         _sess="{log_path.parent.name}"
         _rec="{{\\"timestamp\\":\\"$_ts\\",\\"worker\\":\\"{worker_id}\\""
-        _rec="$_rec\\",\\"issue\\":\\"$issue_id\\",\\"session\\":\\"$_sess\\"}}"
+        _rec="$_rec\\",\\"issue\\":\\"$issue_id\\",\\"session\\":\\"$_sess\\",\\"rc\\":\\"$merge_rc\\"}}"
         echo "$_rec" >> "{cwd}/logs/merge-conflicts.log"
-        ((iteration++))
-        continue
+        # A blocked or conflicted merge means nothing else can land either
+        exit 1
     fi
 
     ((iteration++))
