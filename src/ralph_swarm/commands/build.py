@@ -168,6 +168,113 @@ def merge_worker_to_main(base_dir: Path, worker_id: str) -> str:
         lock_fd.close()
 
 
+def merge_main_into_worker(base_dir: Path, worker_id: str) -> str:
+    """Merge main into the worker branch inside its worktree.
+
+    Mirror of merge_worker_to_main: when worker->main conflicts, the conflict
+    gets staged in the worker worktree — where the agent has full context of
+    its own change — instead of in the main working tree. On 'conflict' the
+    merge is intentionally LEFT in progress for resolution.
+
+    Returns 'success', 'nothing', or 'conflict'.
+    """
+    worktree_dir = base_dir / ".ralph-worktrees" / worker_id
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "log", f"{worker_id}..main", "--oneline"],
+        capture_output=True,
+        text=True,
+        cwd=worktree_dir,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return "nothing"
+
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "merge", "main", "--no-edit"],
+        capture_output=True,
+        text=True,
+        cwd=worktree_dir,
+    )
+    if result.returncode != 0:
+        return "conflict"
+    return "success"
+
+
+def abort_worktree_merge(base_dir: Path, worker_id: str) -> None:
+    """Abort an in-progress merge in the worker worktree (branch ref untouched)."""
+    worktree_dir = base_dir / ".ralph-worktrees" / worker_id
+    subprocess.run(  # noqa: S603, S607
+        ["git", "merge", "--abort"],
+        capture_output=True,
+        cwd=worktree_dir,
+    )
+
+
+def resolve_conflict_in_worktree(
+    base_dir: Path,
+    worker_id: str,
+    model: str,
+    verbose: bool,
+    log_file: Path | None,
+) -> str:
+    """Resolve a worker->main merge conflict via the worker's own worktree.
+
+    Merges main into the worker branch and, if that conflicts, has an agent
+    session resolve it there and re-run the quality gates. Returns 'success'
+    when the worker branch is ready for a retry of merge_worker_to_main,
+    otherwise 'conflict' (worktree merge aborted, branch preserved).
+    """
+    stage = merge_main_into_worker(base_dir, worker_id)
+    if stage != "conflict":
+        # main merged cleanly into the branch (or was already contained) —
+        # the original conflict may just resolve on retry
+        return "success"
+
+    worktree_dir = base_dir / ".ralph-worktrees" / worker_id
+    console.print(
+        f"[yellow]Conflicts staged in {worker_id} worktree — launching agent to resolve...[/yellow]"
+    )
+    run_single_worker(
+        worker_id,
+        model,
+        verbose,
+        worktree_dir,
+        log_file,
+        prompt_override=get_conflict_prompt(worker_id),
+    )
+
+    result = subprocess.run(  # noqa: S603, S607
+        ["git", "diff", "--name-only", "--diff-filter=U"],
+        capture_output=True,
+        text=True,
+        cwd=worktree_dir,
+    )
+    if result.returncode != 0 or result.stdout.strip():
+        console.print(f"[red]Unresolved conflicts remain in {worker_id} worktree.[/red]")
+        abort_worktree_merge(base_dir, worker_id)
+        return "conflict"
+
+    merging = subprocess.run(  # noqa: S603, S607
+        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"],
+        capture_output=True,
+        cwd=worktree_dir,
+    )
+    if merging.returncode == 0:
+        # Agent resolved the files but did not conclude the merge commit
+        result = subprocess.run(  # noqa: S603, S607
+            ["git", "commit", "--no-edit"],
+            capture_output=True,
+            text=True,
+            cwd=worktree_dir,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]Could not conclude merge commit in {worker_id}.[/red]")
+            abort_worktree_merge(base_dir, worker_id)
+            return "conflict"
+
+    console.print(f"[green]Conflicts resolved in {worker_id} worktree[/green]")
+    return "success"
+
+
 def reset_worker_branch(base_dir: Path, worker_id: str) -> None:
     """Reset worker worktree to main HEAD so it's ready for the next task."""
     worktree_dir = base_dir / ".ralph-worktrees" / worker_id
@@ -264,6 +371,11 @@ def get_worker_prompt(worker_id: str, issue_id: str | None = None) -> str:
     return prompt
 
 
+def get_conflict_prompt(worker_id: str) -> str:
+    """Prompt for an agent session that resolves a conflicted worktree merge."""
+    return load_prompt_with_vars("system/conflict", worker_id=worker_id)
+
+
 def get_work_status(cwd: Path) -> dict:
     """Get current work status from beads."""
     result = subprocess.run(  # noqa: S603, S607
@@ -338,9 +450,12 @@ def run_single_worker(
     cwd: Path,
     log_file: Path | None = None,
     issue_id: str | None = None,
+    prompt_override: str | None = None,
 ) -> int:
     """Run a single worker iteration. Returns: 0=no work, 1=worked, 2=error."""
     prompt = get_worker_prompt(worker_id, issue_id)
+    if prompt_override is not None:
+        prompt = prompt_override
 
     # Set actor env for atomic claims (BEADS_ACTOR on bd >=1.0; BD_ACTOR kept for bd 0.x)
     env = os.environ.copy()
@@ -687,6 +802,16 @@ def run_single_worker_loop(
             if use_worktree:
                 console.print(f"[dim]Merging {worker_id} branch to main...[/dim]")
                 merge_result = merge_worker_to_main(cwd, worker_id)
+                # On conflict, resolve inside the worker worktree where the
+                # agent has context, then retry the merge to main
+                if (
+                    merge_result == "conflict"
+                    and resolve_conflict_in_worktree(
+                        cwd, worker_id, model, verbose, log_file
+                    )
+                    == "success"
+                ):
+                    merge_result = merge_worker_to_main(cwd, worker_id)
                 if merge_result == "success":
                     console.print(f"[green]Merged {worker_id} to main[/green]")
                     reset_worker_branch(cwd, worker_id)
@@ -836,6 +961,47 @@ merge_to_main() {{
     return $rc
 }}
 
+resolve_conflicts() {{
+    # A worker->main merge conflicted (rc=10). Bring main into the worker
+    # branch so the conflict is resolved HERE, in the worker worktree, by the
+    # agent — the main checkout never enters a conflicted state.
+    merge_out=$(mktemp)
+    if git -C "{work_dir}" merge main --no-edit > "$merge_out" 2>&1; then
+        cat "$merge_out" >> "{log_path}"
+        rm -f "$merge_out"
+        echo "main merged into {worker_id} cleanly; retrying merge to main" >> "{log_path}"
+        return 0
+    fi
+    cat "$merge_out" >> "{log_path}"
+    rm -f "$merge_out"
+    if ! git -C "{work_dir}" diff --name-only --diff-filter=U 2>/dev/null | grep -q .; then
+        echo "Worktree merge failed without conflicts — aborting" >> "{log_path}"
+        git -C "{work_dir}" merge --abort >> "{log_path}" 2>&1
+        return 1
+    fi
+
+    echo "Conflicts staged in worktree — launching Claude to resolve" >> "{log_path}"
+    cat << 'PROMPT_EOF' | claude --dangerously-skip-permissions \\
+        --model {model}{verbose_flags} >> "{log_path}" 2>&1
+{get_conflict_prompt(worker_id)}
+PROMPT_EOF
+
+    if git -C "{work_dir}" diff --name-only --diff-filter=U 2>/dev/null | grep -q .; then
+        echo "Agent left unresolved conflicts — aborting worktree merge" >> "{log_path}"
+        git -C "{work_dir}" merge --abort >> "{log_path}" 2>&1
+        return 1
+    fi
+    if git -C "{work_dir}" rev-parse -q --verify MERGE_HEAD > /dev/null 2>&1; then
+        echo "Agent resolved files but did not commit — concluding merge commit" >> "{log_path}"
+        if ! git -C "{work_dir}" commit --no-edit >> "{log_path}" 2>&1; then
+            git -C "{work_dir}" merge --abort >> "{log_path}" 2>&1
+            return 1
+        fi
+    fi
+    echo "Conflicts resolved in {worker_id}; retrying merge to main" >> "{log_path}"
+    return 0
+}}
+
 while true; do
     if [ -f "{cwd}/{STOP_FILE}" ]; then
         echo "Shutdown requested — stopping gracefully" >> "{log_path}"
@@ -933,6 +1099,15 @@ PROMPT_EOF
     # Exit codes: 0 merged/nothing, 10 conflict, 11 dirty main tree, 12 lock timeout.
     merge_to_main
     merge_rc=$?
+    if [ "$merge_rc" -eq 10 ]; then
+        echo "Merge conflict — attempting agent-driven resolution in worktree" >> "{log_path}"
+        if resolve_conflicts; then
+            merge_to_main
+            merge_rc=$?
+        else
+            merge_rc=10
+        fi
+    fi
     if [ "$merge_rc" -ne 0 ]; then
         echo "Merge failed for $issue_id (rc=$merge_rc) — stopping worker" >> "{log_path}"
         if [ "$merge_rc" -eq 10 ]; then
@@ -943,7 +1118,7 @@ PROMPT_EOF
         _ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
         _sess="{log_path.parent.name}"
         _rec="{{\\"timestamp\\":\\"$_ts\\",\\"worker\\":\\"{worker_id}\\""
-        _rec="$_rec\\",\\"issue\\":\\"$issue_id\\",\\"session\\":\\"$_sess\\",\\"rc\\":\\"$merge_rc\\"}}"
+        _rec="$_rec,\\"issue\\":\\"$issue_id\\",\\"session\\":\\"$_sess\\",\\"rc\\":\\"$merge_rc\\"}}"
         echo "$_rec" >> "{cwd}/logs/merge-conflicts.log"
         # A blocked or conflicted merge means nothing else can land either
         exit 1

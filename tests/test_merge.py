@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 from ralph_swarm.commands.build import (
     create_worktree,
+    get_conflict_prompt,
+    merge_main_into_worker,
     merge_worker_to_main,
     reset_worker_branch,
 )
@@ -317,3 +319,89 @@ class TestFullCycle:
         # Branch commits should still be accessible
         log = _git(repo, "log", "ralph-1", "--oneline")
         assert "Worker change" in log.stdout
+
+
+class TestMergeMainIntoWorker:
+    @_clean_env
+    def test_merges_main_into_worker(self, tmp_path: Path) -> None:
+        """Commits from main land on the worker branch inside the worktree."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "worker.py").write_text("worker\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Worker change")
+
+        (repo / "main.py").write_text("main\n")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "Main change")
+
+        assert merge_main_into_worker(repo, "ralph-1") == "success"
+        assert (wt / "main.py").exists()
+        log = _git(repo, "log", "ralph-1", "--oneline")
+        assert "Main change" in log.stdout
+
+    @_clean_env
+    def test_conflict_left_in_progress(self, tmp_path: Path) -> None:
+        """On conflict the merge is left in progress for agent resolution."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "shared.txt").write_text("worker\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Worker change")
+
+        (repo / "shared.txt").write_text("main\n")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "Main change")
+
+        assert merge_main_into_worker(repo, "ralph-1") == "conflict"
+        # Merge still in progress inside the worktree; main checkout untouched
+        merging = _git(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+        assert merging.returncode == 0
+        assert (repo / "shared.txt").read_text() == "main\n"
+
+    @_clean_env
+    def test_nothing_when_worker_contains_main(self, tmp_path: Path) -> None:
+        """No main commits missing from the worker returns 'nothing'."""
+        repo = _init_repo(tmp_path)
+        create_worktree(repo, "ralph-1")
+
+        assert merge_main_into_worker(repo, "ralph-1") == "nothing"
+
+
+class TestConflictResolutionCycle:
+    @_clean_env
+    def test_resolved_conflict_merges_to_main(self, tmp_path: Path) -> None:
+        """worker->main conflicts, resolution happens in worktree, retry lands."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "config.py").write_text("WORKER = True\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Worker change")
+
+        (repo / "README.md").write_text("# main edit\n")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "Main change")
+        (wt / "README.md").write_text("# worker edit\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Worker README edit")
+
+        assert merge_worker_to_main(repo, "ralph-1") == "conflict"
+        assert merge_main_into_worker(repo, "ralph-1") == "conflict"
+
+        # Simulate the agent: resolve the conflicted file, conclude the merge
+        (wt / "README.md").write_text("# resolved\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "--no-edit")
+
+        assert merge_worker_to_main(repo, "ralph-1") == "success"
+        assert (repo / "config.py").exists()
+        assert (repo / "README.md").read_text() == "# resolved\n"
+
+    @_clean_env
+    def test_get_conflict_prompt_mentions_worker(self) -> None:
+        prompt = get_conflict_prompt("ralph-2")
+        assert "ralph-2" in prompt
+        assert "git status" in prompt
