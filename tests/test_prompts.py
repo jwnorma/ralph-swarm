@@ -22,6 +22,15 @@ class TestLoadPrompt:
         assert "# Ralph Build Mode" in prompt
         assert "{worker_id}" in prompt  # Should have placeholder
 
+    def test_build_prompt_has_final_rebase_step(self) -> None:
+        """Worker must rebase onto main and re-run gates before finishing."""
+        prompt = load_prompt("system/build")
+        assert "git rebase main" in prompt
+        assert "git rebase --abort" in prompt
+        assert "git rebase --continue" in prompt
+        # Rebase is the prescribed final step only, not ad-hoc git surgery
+        assert "Rebase onto main ONLY as the final step 9" in prompt
+
     def test_load_specify_initial_prompt(self) -> None:
         """Should load the initial specify prompt."""
         prompt = load_prompt("system/specify_initial")
