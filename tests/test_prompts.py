@@ -31,6 +31,13 @@ class TestLoadPrompt:
         # Rebase is the prescribed final step only, not ad-hoc git surgery
         assert "Rebase onto main ONLY as the final step 9" in prompt
 
+    def test_build_prompt_has_no_backticks(self) -> None:
+        """The task prompt feeds an UNQUOTED shell heredoc; backticks would be
+        executed as command substitutions while building the prompt (slow
+        substitutions starve the claude CLI's 3s stdin wait and kill the task)."""
+        prompt = load_prompt("system/build")
+        assert "`" not in prompt
+
     def test_load_specify_initial_prompt(self) -> None:
         """Should load the initial specify prompt."""
         prompt = load_prompt("system/specify_initial")
