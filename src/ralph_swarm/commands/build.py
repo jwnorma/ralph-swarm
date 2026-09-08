@@ -116,6 +116,72 @@ def create_worktree(base_dir: Path, worker_id: str) -> Path:
     return worktree_dir
 
 
+def _parse_merge_blockers(merge_output: str) -> tuple[list[str], list[str]]:
+    """Extract blocker file lists from a refused merge's output.
+
+    Returns (untracked, modified) from git sections like:
+        error: The following untracked working tree files would be
+        overwritten by merge:
+        \tfile.txt
+        Please move or remove them before you merge.
+    """
+    untracked: list[str] = []
+    modified: list[str] = []
+    current: list[str] | None = None
+    for line in merge_output.splitlines():
+        stripped = line.strip()
+        if "untracked working tree files would be overwritten by merge" in stripped:
+            current = untracked
+        elif "local changes to the following files would be overwritten" in stripped:
+            current = modified
+        elif stripped.startswith("Please "):
+            current = None
+        elif current is not None and line.startswith("\t"):
+            current.append(stripped)
+    return untracked, modified
+
+
+def clear_identical_untracked_blockers(base_dir: Path, worker_id: str, merge_output: str) -> int:
+    """Remove untracked merge blockers that are byte-identical to the branch's copy.
+
+    Acts only when every blocker git named is such a file — a differing untracked
+    file or uncommitted changes to tracked files are left for a human. Returns the
+    number of files removed (0 when not actionable).
+    """
+    untracked, modified = _parse_merge_blockers(merge_output)
+    if modified or not untracked:
+        return 0
+
+    removable: list[Path] = []
+    for path in untracked:
+        if ".." in path.split("/"):
+            return 0
+        local = base_dir / path
+        if not local.is_file():
+            return 0
+        local_sha = subprocess.run(  # noqa: S603, S607
+            ["git", "hash-object", "--", path],
+            capture_output=True,
+            text=True,
+            cwd=base_dir,
+        )
+        branch_sha = subprocess.run(  # noqa: S603, S607
+            ["git", "rev-parse", f"{worker_id}:{path}"],
+            capture_output=True,
+            text=True,
+            cwd=base_dir,
+        )
+        if local_sha.returncode != 0 or branch_sha.returncode != 0:
+            return 0
+        if local_sha.stdout.strip() != branch_sha.stdout.strip():
+            return 0
+        removable.append(local)
+
+    for f in removable:
+        f.unlink()
+    return len(removable)
+
+
 def merge_worker_to_main(base_dir: Path, worker_id: str) -> str:
     """Merge worker branch back to main.
 
@@ -143,26 +209,44 @@ def merge_worker_to_main(base_dir: Path, worker_id: str) -> str:
     try:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
-        result = subprocess.run(  # noqa: S603, S607
-            ["git", "merge", worker_id, "--no-edit"],
-            capture_output=True,
-            text=True,
-            cwd=base_dir,
-        )
-        if result.returncode != 0:
+        for attempt in (1, 2):
+            result = subprocess.run(  # noqa: S603, S607
+                ["git", "merge", worker_id, "--no-edit"],
+                capture_output=True,
+                text=True,
+                cwd=base_dir,
+            )
+            if result.returncode == 0:
+                return "success"
+
             # Abort whatever git started (a no-op if it refused before merging)
             subprocess.run(  # noqa: S603, S607
                 ["git", "merge", "--abort"],
                 capture_output=True,
                 cwd=base_dir,
             )
-            if "would be overwritten by merge" in result.stderr:
-                # Dirty main worktree, not a conflict — show git's file list
-                console.print(f"[red]Merge refused for {worker_id}:[/red] {result.stderr.strip()}")
-                return "dirty"
-            return "conflict"
+            merge_output = result.stderr + result.stdout
+            if "would be overwritten by merge" not in merge_output:
+                return "conflict"
+            if attempt == 1:
+                # Deterministic auto-clear: untracked blockers byte-identical
+                # to the branch's copy can be dropped without losing anything
+                removed = clear_identical_untracked_blockers(
+                    base_dir, worker_id, merge_output
+                )
+                if removed:
+                    console.print(
+                        f"[yellow]Removed {removed} untracked file(s) identical "
+                        f"to {worker_id} — retrying merge[/yellow]"
+                    )
+                    continue
 
-        return "success"
+            # Dirty main worktree that we can't safely clear — show git's list
+            console.print(
+                f"[red]Merge refused for {worker_id}:[/red] {result.stderr.strip()}"
+            )
+            return "dirty"
+        return "dirty"  # unreachable; loop always returns
     finally:
         fcntl.flock(lock_fd, fcntl.LOCK_UN)
         lock_fd.close()
@@ -821,11 +905,25 @@ def run_single_worker_loop(
                         f"the main worktree, then run `git merge {worker_id}`. "
                         f"Branch preserved.[/red]"
                     )
+                    _release_issue(
+                        issue_id,
+                        worker_id,
+                        work_dir,
+                        "Merge blocked by dirty main worktree; branch preserved.",
+                        log_file,
+                    )
                     break
                 elif merge_result == "conflict":
                     console.print(
                         f"[red]Merge conflict on {worker_id}. "
                         f"Branch preserved for manual resolution.[/red]"
+                    )
+                    _release_issue(
+                        issue_id,
+                        worker_id,
+                        work_dir,
+                        "Merge conflict unresolvable; branch preserved.",
+                        log_file,
                     )
                     break
                 # "nothing" — no commits to merge, continue normally
@@ -932,28 +1030,61 @@ merge_to_main() {{
     done
 
     merge_out=$(mktemp)
-    if git -C "$MAIN_REPO" merge "{worker_id}" --no-edit > "$merge_out" 2>&1; then
+    rc=0
+    attempt=1
+    while :; do
+        if git -C "$MAIN_REPO" merge "{worker_id}" --no-edit > "$merge_out" 2>&1; then
+            cat "$merge_out" >> "{log_path}"
+            echo "Merged {worker_id} to main successfully" >> "{log_path}"
+            rm -f "$merge_out"
+            rmdir "$MERGE_LOCK.d" 2>/dev/null
+            # Reset worktree to main HEAD for next task (safe: fully merged)
+            git -C "{work_dir}" reset --hard main >> "{log_path}" 2>&1
+            return 0
+        fi
         cat "$merge_out" >> "{log_path}"
-        echo "Merged {worker_id} to main successfully" >> "{log_path}"
-        rm -f "$merge_out"
-        rmdir "$MERGE_LOCK.d" 2>/dev/null
-        # Reset worktree to main HEAD for next task (safe: fully merged)
-        git -C "{work_dir}" reset --hard main >> "{log_path}" 2>&1
-        return 0
-    fi
+
+        # Only the untracked/modified-blocker refusal is auto-retryable
+        grep -q "would be overwritten by merge" "$merge_out" || {{ rc=10; break; }}
+        [ "$attempt" -eq 1 ] || {{ rc=11; break; }}
+
+        # Deterministic auto-clear: untracked blockers byte-identical to the
+        # branch's copy can be dropped without losing anything. All-or-nothing:
+        # any modified tracked file or differing untracked file stops for a human.
+        modified=$(awk '/local changes to the following files would be overwritten/{{f=1;next}}
+            /^Please /{{f=0}} f && /^\t/{{print}}' "$merge_out")
+        if [ -n "$modified" ]; then rc=11; break; fi
+        blockers=$(awk '/untracked working tree files would be overwritten/{{f=1;next}}
+            /^Please /{{f=0}} f && /^\t/{{print substr($0,2)}}' "$merge_out")
+        if [ -z "$blockers" ]; then rc=11; break; fi
+        all_identical=1
+        while IFS= read -r p; do
+            [ -f "$MAIN_REPO/$p" ] || {{ all_identical=0; break; }}
+            lsha=$(git -C "$MAIN_REPO" hash-object -- "$p" 2>/dev/null)
+            bsha=$(git -C "$MAIN_REPO" rev-parse "{worker_id}:$p" 2>/dev/null)
+            if [ -z "$lsha" ] || [ "$lsha" != "$bsha" ]; then
+                all_identical=0
+                break
+            fi
+        done <<< "$blockers"
+        if [ "$all_identical" -ne 1 ]; then rc=11; break; fi
+        echo "Auto-clearing untracked blocker(s) identical to {worker_id}:" >> "{log_path}"
+        while IFS= read -r p; do
+            echo "  $p" >> "{log_path}"
+            rm -f -- "$MAIN_REPO/$p"
+        done <<< "$blockers"
+        attempt=2
+    done
 
     # Merge refused or conflicted — abort in main and keep the worker branch
     # intact. Resetting the worktree here would orphan the unmerged commits.
-    cat "$merge_out" >> "{log_path}"
-    if grep -q "would be overwritten by merge" "$merge_out"; then
-        echo "Main worktree has uncommitted/untracked files blocking the merge." >> "{log_path}"
-        echo "Commit or stash them, then run: git -C $MAIN_REPO merge {worker_id}" >> "{log_path}"
-        rc=11
-    else
+    if [ "$rc" -eq 10 ]; then
         echo "Merge conflict on {worker_id}." >> "{log_path}"
         echo "Branch preserved for manual resolution:" >> "{log_path}"
         echo "  git -C $MAIN_REPO merge {worker_id}" >> "{log_path}"
-        rc=10
+    else
+        echo "Main worktree has uncommitted/untracked files blocking the merge." >> "{log_path}"
+        echo "Commit or stash them, then run: git -C $MAIN_REPO merge {worker_id}" >> "{log_path}"
     fi
     rm -f "$merge_out"
     git -C "$MAIN_REPO" merge --abort >> "{log_path}" 2>&1
@@ -1110,8 +1241,9 @@ PROMPT_EOF
     fi
     if [ "$merge_rc" -ne 0 ]; then
         echo "Merge failed for $issue_id (rc=$merge_rc) — stopping worker" >> "{log_path}"
-        if [ "$merge_rc" -eq 10 ]; then
+        if [ "$merge_rc" -eq 10 ] || [ "$merge_rc" -eq 11 ]; then
             # The work did not land, so release the issue for a retry
+            # (rc=12 lock timeout is transient: leave state for ralph cleanup)
             bd update "$issue_id" --status open --assignee "" >> "{log_path}" 2>&1
         fi
         # Record for observability

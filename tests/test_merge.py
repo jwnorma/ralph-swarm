@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ralph_swarm.commands.build import (
+    _parse_merge_blockers,
+    clear_identical_untracked_blockers,
     create_worktree,
     get_conflict_prompt,
     merge_main_into_worker,
@@ -319,6 +321,140 @@ class TestFullCycle:
         # Branch commits should still be accessible
         log = _git(repo, "log", "ralph-1", "--oneline")
         assert "Worker change" in log.stdout
+
+
+class TestUntrackedBlockerAutoClear:
+    @_clean_env
+    def test_identical_untracked_blocker_auto_cleared(self, tmp_path: Path) -> None:
+        """Untracked files identical to the branch's copy are removed; merge lands."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "specs").mkdir()
+        (wt / "specs" / "a.md").write_text("spec a\n")
+        (wt / "specs" / "b.md").write_text("spec b\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Track specs")
+
+        # Same files sit untracked in main, byte-identical
+        (repo / "specs").mkdir()
+        (repo / "specs" / "a.md").write_text("spec a\n")
+        (repo / "specs" / "b.md").write_text("spec b\n")
+
+        assert merge_worker_to_main(repo, "ralph-1") == "success"
+        # Files are now tracked on main with identical content
+        tracked = _git(repo, "ls-files", "specs/")
+        assert "specs/a.md" in tracked.stdout
+        assert (repo / "specs" / "a.md").read_text() == "spec a\n"
+
+    @_clean_env
+    def test_differing_untracked_blocker_left_alone(self, tmp_path: Path) -> None:
+        """A differing untracked file blocks the merge and is never deleted."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "notes.md").write_text("branch version\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Add notes")
+
+        (repo / "notes.md").write_text("precious local edits\n")
+
+        assert merge_worker_to_main(repo, "ralph-1") == "dirty"
+        assert (repo / "notes.md").read_text() == "precious local edits\n"
+
+    @_clean_env
+    def test_mixed_blockers_all_or_nothing(self, tmp_path: Path) -> None:
+        """Identical untracked blocker is NOT removed when another blocker is unsafe."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        # Branch modifies tracked README and adds specs/new.md
+        (wt / "README.md").write_text("worker change\n")
+        (wt / "specs").mkdir()
+        (wt / "specs" / "new.md").write_text("spec\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Worker work")
+
+        # Main: uncommitted README edit (unsafe) + identical untracked spec (safe)
+        (repo / "README.md").write_text("local uncommitted edit\n")
+        (repo / "specs").mkdir()
+        (repo / "specs" / "new.md").write_text("spec\n")
+
+        assert merge_worker_to_main(repo, "ralph-1") == "dirty"
+        # All-or-nothing: the safe blocker must survive too
+        assert (repo / "specs" / "new.md").exists()
+        assert (repo / "README.md").read_text() == "local uncommitted edit\n"
+
+    @_clean_env
+    def test_conflict_after_autoclear_returns_conflict(self, tmp_path: Path) -> None:
+        """After clearing blockers, a retry that conflicts classifies as conflict."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "README.md").write_text("worker change\n")
+        (wt / "specs").mkdir()
+        (wt / "specs" / "new.md").write_text("spec\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Worker work")
+
+        # Diverging committed change on main → content conflict on retry
+        (repo / "README.md").write_text("main change\n")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "Main change")
+
+        # Identical untracked blocker
+        (repo / "specs").mkdir()
+        (repo / "specs" / "new.md").write_text("spec\n")
+
+        assert merge_worker_to_main(repo, "ralph-1") == "conflict"
+
+    def test_parse_merge_blockers_sections(self) -> None:
+        """Both git blocker sections parse with tab-indented paths."""
+        output = (
+            "Updating a1b2c3..d4e5f6\n"
+            "error: The following untracked working tree files would be "
+            "overwritten by merge:\n"
+            "\tspecs/a.md\n"
+            "\tspecs/b.md\n"
+            "Please move or remove them before you merge.\n"
+            "Aborting\n"
+        )
+        untracked, modified = _parse_merge_blockers(output)
+        assert untracked == ["specs/a.md", "specs/b.md"]
+        assert modified == []
+
+        output = (
+            "error: Your local changes to the following files would be "
+            "overwritten by merge:\n"
+            "\tAGENTS.md\n"
+            "Please commit your changes or stash them before you merge.\n"
+            "Aborting\n"
+        )
+        untracked, modified = _parse_merge_blockers(output)
+        assert untracked == []
+        assert modified == ["AGENTS.md"]
+
+    @_clean_env
+    def test_clear_helper_returns_count(self, tmp_path: Path) -> None:
+        """The standalone helper reports how many identical blockers it removed."""
+        repo = _init_repo(tmp_path)
+        wt = create_worktree(repo, "ralph-1")
+
+        (wt / "specs").mkdir()
+        (wt / "specs" / "x.md").write_text("x\n")
+        _git(wt, "add", ".")
+        _git(wt, "commit", "-m", "Add spec")
+
+        (repo / "specs").mkdir()
+        (repo / "specs" / "x.md").write_text("x\n")
+
+        output = (
+            "error: The following untracked working tree files would be "
+            "overwritten by merge:\n\tspecs/x.md\n"
+            "Please move or remove them before you merge.\n"
+        )
+        assert clear_identical_untracked_blockers(repo, "ralph-1", output) == 1
+        assert not (repo / "specs" / "x.md").exists()
 
 
 class TestMergeMainIntoWorker:
