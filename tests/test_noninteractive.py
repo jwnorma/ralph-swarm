@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -12,7 +13,26 @@ from ralph_swarm.noninteractive import (
     ONE_SHOT_APPENDIX,
     format_answers_section,
     load_json_input,
+    substitute_placeholder,
 )
+
+
+def invoke_mix_stderr(args: list[str]) -> SimpleNamespace:
+    """Invoke the CLI and return exit_code/output/exception with stderr folded
+    into `output` (click >= 8.2 keeps the streams separate), so assertions can
+    cover both streams deterministically."""
+    import contextlib
+    import io
+
+    runner = CliRunner()
+    stderr = io.StringIO()
+    with contextlib.redirect_stderr(stderr):
+        result = runner.invoke(main, args)
+    return SimpleNamespace(
+        exit_code=result.exit_code,
+        output=result.output + stderr.getvalue(),
+        exception=result.exception,
+    )
 
 
 class TestLoadJsonInput:
@@ -79,6 +99,24 @@ class TestOneShotAppendix:
         assert "Do NOT ask" in ONE_SHOT_APPENDIX
 
 
+class TestSubstitutePlaceholder:
+    def test_replaces_value(self) -> None:
+        out = substitute_placeholder("Hello {name}!", "name", "World")
+        assert out == "Hello World!"
+
+    def test_missing_placeholder_exits(self) -> None:
+        with pytest.raises(SystemExit):
+            substitute_placeholder("No placeholder here", "name", "World")
+
+    def test_missing_placeholder_message_is_actionable(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(SystemExit):
+            substitute_placeholder("No placeholder here", "research_topic", "x")
+        captured = capsys.readouterr()
+        assert "{research_topic}" in captured.err
+
+
 class TestSpecifyInputMode:
     """Tests for `ralph specify --input`."""
 
@@ -90,7 +128,7 @@ class TestSpecifyInputMode:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._setup_project(tmp_path, monkeypatch)
-        result = CliRunner().invoke(main, ["specify", "--input", str(tmp_path / "nope.json")])
+        result = invoke_mix_stderr(["specify", "--input", str(tmp_path / "nope.json")])
         assert result.exit_code == 1
 
     def test_incremental_requires_feature(
@@ -99,7 +137,7 @@ class TestSpecifyInputMode:
         self._setup_project(tmp_path, monkeypatch)
         p = tmp_path / "answers.json"
         p.write_text(json.dumps({"mode": "incremental"}))
-        result = CliRunner().invoke(main, ["specify", "--input", str(p)])
+        result = invoke_mix_stderr(["specify", "--input", str(p)])
         assert result.exit_code == 1
         assert "feature" in result.output.lower()
 
@@ -107,7 +145,7 @@ class TestSpecifyInputMode:
         self._setup_project(tmp_path, monkeypatch)
         p = tmp_path / "answers.json"
         p.write_text(json.dumps({"mode": "bogus"}))
-        result = CliRunner().invoke(main, ["specify", "--input", str(p)])
+        result = invoke_mix_stderr(["specify", "--input", str(p)])
         assert result.exit_code == 1
         assert "Invalid mode" in result.output
 
@@ -125,7 +163,7 @@ class TestSpecifyInputMode:
                 }
             )
         )
-        result = CliRunner().invoke(main, ["specify", "--input", str(p), "--dry-run"])
+        result = invoke_mix_stderr(["specify", "--input", str(p), "--dry-run"])
         assert result.exit_code == 0
         assert "Full Specification" in result.output
         assert "https://example.com" in result.output
@@ -147,7 +185,7 @@ class TestSpecifyInputMode:
             (tmp_path / "specs" / "overview.md").write_text("# Overview")
 
         with patch("ralph_swarm.commands.specify.run_one_shot", side_effect=fake_run_one_shot):
-            result = CliRunner().invoke(main, ["specify", "--input", str(p)])
+            result = invoke_mix_stderr(["specify", "--input", str(p)])
 
         assert result.exit_code == 0
         assert "overview.md" in result.output
@@ -161,7 +199,7 @@ class TestSpecifyInputMode:
         p.write_text(json.dumps({}))
 
         with patch("ralph_swarm.commands.specify.run_one_shot", return_value=None):
-            result = CliRunner().invoke(main, ["specify", "--input", str(p)])
+            result = invoke_mix_stderr(["specify", "--input", str(p)])
 
         assert result.exit_code == 0
         assert "No new spec files" in result.output
@@ -178,7 +216,7 @@ class TestResearchInputMode:
         self._setup_project(tmp_path, monkeypatch)
         p = tmp_path / "research.json"
         p.write_text(json.dumps({"goal": "learn"}))
-        result = CliRunner().invoke(main, ["research", "--input", str(p)])
+        result = invoke_mix_stderr(["research", "--input", str(p)])
         assert result.exit_code == 1
         assert "topic" in result.output.lower()
 
@@ -188,7 +226,7 @@ class TestResearchInputMode:
         self._setup_project(tmp_path, monkeypatch)
         p = tmp_path / "research.json"
         p.write_text(json.dumps({"topic": "caching libraries", "goal": "pick one"}))
-        result = CliRunner().invoke(main, ["research", "--input", str(p), "--dry-run"])
+        result = invoke_mix_stderr(["research", "--input", str(p), "--dry-run"])
         assert result.exit_code == 0
         assert "caching libraries" in result.output
         assert "pick one" in result.output
@@ -201,7 +239,7 @@ class TestResearchInputMode:
         self._setup_project(tmp_path, monkeypatch)
         p = tmp_path / "research.json"
         p.write_text(json.dumps({"topic": "caching"}))
-        result = CliRunner().invoke(main, ["research", "--input", str(p), "--dry-run"])
+        result = invoke_mix_stderr(["research", "--input", str(p), "--dry-run"])
         assert result.exit_code == 0
 
     def test_runs_headless(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -218,7 +256,7 @@ class TestResearchInputMode:
             (rd / "caching.md").write_text("# Caching")
 
         with patch("ralph_swarm.commands.research.run_one_shot", side_effect=fake_run_one_shot):
-            result = CliRunner().invoke(main, ["research", "--input", str(p)])
+            result = invoke_mix_stderr(["research", "--input", str(p)])
 
         assert result.exit_code == 0
         assert "caching.md" in result.output

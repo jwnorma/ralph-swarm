@@ -15,6 +15,7 @@ from ralph_swarm.noninteractive import (
     format_answers_section,
     load_json_input,
     run_one_shot,
+    substitute_placeholder,
 )
 from ralph_swarm.prompts import load_prompt
 
@@ -135,8 +136,8 @@ def research_cmd(
         context = {"topic": data["topic"], "goal": data.get("goal", default_goal)}
 
         prompt_template = load_prompt("system/research")
-        prompt = prompt_template.replace("{research_topic}", context["topic"])
-        prompt = prompt.replace("{research_goal}", context["goal"])
+        prompt = substitute_placeholder(prompt_template, "research_topic", context["topic"])
+        prompt = substitute_placeholder(prompt, "research_goal", context["goal"])
         prompt += format_answers_section(data) + ONE_SHOT_APPENDIX
 
         if dry_run:

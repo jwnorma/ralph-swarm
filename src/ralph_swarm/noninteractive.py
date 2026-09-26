@@ -40,6 +40,13 @@ output file the workflow calls for, then finish. Your final message should
 briefly summarize what you created and any decisions you made.
 """
 
+# Note on trust: `answers`/`context` come from the local JSON file supplied by
+# the person running the command, and are interpolated into the agent prompt
+# as-is. They carry the same trust as the prompt flags of `plan`/`build`
+# (which pass raw prompts). They are NOT a boundary against the agent - don't
+# put secrets in them, and treat the resulting run as acting on behalf of the
+# file's author.
+
 
 def load_json_input(path: Path, required: list[str]) -> dict:
     """Load and validate a JSON input file.
@@ -106,7 +113,9 @@ def run_one_shot(prompt: str, model: str, verbose: bool, cwd: Path) -> None:
     """Run a single headless Claude Code session with the given prompt.
 
     Uses `claude -p` (print mode) with permission prompts disabled, mirroring
-    what plan/build already do. Exits non-zero if the session fails.
+    what plan/build already do. The session's final summary is always printed
+    after the run, and stderr warnings are surfaced even on success. Exits
+    non-zero if the session fails.
     """
     cmd = [
         "claude",
@@ -128,7 +137,7 @@ def run_one_shot(prompt: str, model: str, verbose: bool, cwd: Path) -> None:
             cwd=cwd,
         )
 
-        if verbose and result.stdout:
+        if result.stdout:
             click.echo(result.stdout)
 
         if result.returncode != 0:
@@ -136,6 +145,29 @@ def run_one_shot(prompt: str, model: str, verbose: bool, cwd: Path) -> None:
             if result.stderr:
                 click.echo(result.stderr, err=True)
             sys.exit(1)
+
+        # Surface warnings even when the session succeeded.
+        if result.stderr:
+            click.echo("Session warnings:", err=True)
+            click.echo(result.stderr, err=True)
     except FileNotFoundError:
         click.echo("Claude CLI not found. Is it installed?", err=True)
         sys.exit(1)
+
+
+def substitute_placeholder(template: str, placeholder: str, value: str) -> str:
+    """Replace `{placeholder}` in template and verify it happened.
+
+    Exits with a clear error if the placeholder is not present, so a renamed
+    or missing placeholder in a prompt template fails loudly instead of
+    silently producing a broken prompt with a literal `{placeholder}` in it.
+    """
+    token = "{" + placeholder + "}"
+    if token not in template:
+        click.echo(
+            f"Prompt template is missing expected placeholder {token}. "
+            "The installed ralph-swarm prompts may be out of sync with the code.",
+            err=True,
+        )
+        sys.exit(1)
+    return template.replace(token, value)

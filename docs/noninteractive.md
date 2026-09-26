@@ -71,5 +71,7 @@ ralph research --input research.json
   route through any Anthropic-compatible backend.
 - Permission prompts are bypassed (`--dangerously-skip-permissions`), same as
   `plan` and `build` — run this in a project directory you trust.
-- The session's final summary is printed to stderr; artifacts land in `specs/`
-  or `docs/research/` as usual.
+- The session's final summary is printed after the run; artifacts land in
+  `specs/` or `docs/research/` as usual.
+- `answers` and `context` are interpolated into the agent prompt verbatim.
+  They're your own instructions to the agent — don't put secrets in them.

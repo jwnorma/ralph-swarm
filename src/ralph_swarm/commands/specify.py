@@ -14,6 +14,7 @@ from ralph_swarm.noninteractive import (
     format_answers_section,
     load_json_input,
     run_one_shot,
+    substitute_placeholder,
 )
 from ralph_swarm.prompts import load_prompt
 
@@ -150,7 +151,7 @@ def specify_cmd(
         prior_art_section = build_prior_art_section(prior_art_list)
 
         prompt_template = load_prompt(f"system/specify_{mode}")
-        prompt = prompt_template.replace("{prior_art_section}", prior_art_section)
+        prompt = substitute_placeholder(prompt_template, "prior_art_section", prior_art_section)
         if feature:
             prompt = f"**Feature to specify:** {feature}\n\n" + prompt
         prompt += format_answers_section(data) + ONE_SHOT_APPENDIX
