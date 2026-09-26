@@ -231,9 +231,7 @@ def merge_worker_to_main(base_dir: Path, worker_id: str) -> str:
             if attempt == 1:
                 # Deterministic auto-clear: untracked blockers byte-identical
                 # to the branch's copy can be dropped without losing anything
-                removed = clear_identical_untracked_blockers(
-                    base_dir, worker_id, merge_output
-                )
+                removed = clear_identical_untracked_blockers(base_dir, worker_id, merge_output)
                 if removed:
                     console.print(
                         f"[yellow]Removed {removed} untracked file(s) identical "
@@ -242,9 +240,7 @@ def merge_worker_to_main(base_dir: Path, worker_id: str) -> str:
                     continue
 
             # Dirty main worktree that we can't safely clear — show git's list
-            console.print(
-                f"[red]Merge refused for {worker_id}:[/red] {result.stderr.strip()}"
-            )
+            console.print(f"[red]Merge refused for {worker_id}:[/red] {result.stderr.strip()}")
             return "dirty"
         return "dirty"  # unreachable; loop always returns
     finally:
@@ -890,9 +886,7 @@ def run_single_worker_loop(
                 # agent has context, then retry the merge to main
                 if (
                     merge_result == "conflict"
-                    and resolve_conflict_in_worktree(
-                        cwd, worker_id, model, verbose, log_file
-                    )
+                    and resolve_conflict_in_worktree(cwd, worker_id, model, verbose, log_file)
                     == "success"
                 ):
                     merge_result = merge_worker_to_main(cwd, worker_id)
