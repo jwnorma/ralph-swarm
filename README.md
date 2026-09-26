@@ -42,6 +42,17 @@ ralph build --workers 2
 ralph status
 ```
 
+### Non-Interactive (One-Shot) Mode
+
+`research` and `specify` accept `--input <file>.json` to run headlessly with no
+prompts — the full pipeline can then run unattended. See
+[docs/noninteractive.md](docs/noninteractive.md) for the JSON format.
+
+```bash
+ralph research --input research.json
+ralph specify --input answers.json
+```
+
 ---
 
 ## Workflow Guide

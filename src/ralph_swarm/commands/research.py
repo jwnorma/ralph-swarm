@@ -10,6 +10,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
+from ralph_swarm.noninteractive import (
+    ONE_SHOT_APPENDIX,
+    format_answers_section,
+    load_json_input,
+    run_one_shot,
+)
 from ralph_swarm.prompts import load_prompt
 
 console = Console()
@@ -75,19 +81,31 @@ def gather_research_context() -> dict:
 )
 @click.option("--verbose", "-v", is_flag=True, help="Show Claude output in real-time")
 @click.option("--dry-run", is_flag=True, help="Show prompt without executing")
+@click.option(
+    "--input",
+    "input_file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Non-interactive mode: read topic/goal from this JSON file and run headlessly.",
+)
 def research_cmd(
     model: str,
     verbose: bool,
     dry_run: bool,
+    input_file: Path | None,
 ) -> None:
     """Research technologies, libraries, and best practices interactively.
 
     Launches an interactive session to help you research before defining specifications.
     Results are saved to docs/research/ for use in later phases.
 
+    Pass --input with a JSON file to run non-interactively (no prompts, no
+    interactive Claude session). See docs/noninteractive.md for the format.
+
     Examples:
         ralph research          # Interactive research session
         ralph research --dry-run  # Show prompt without executing
+        ralph research --input research.json   # One-shot, headless
     """
     cwd = Path.cwd()
 
@@ -109,6 +127,45 @@ def research_cmd(
         for f in status["files"]:
             console.print(f"  [dim]○[/dim] docs/research/{f}")
         console.print()
+
+    # Non-interactive path: topic/goal come from the JSON file.
+    if input_file is not None:
+        data = load_json_input(input_file, required=["topic"])
+        default_goal = "Understand the topic well enough to make informed specification decisions."
+        context = {"topic": data["topic"], "goal": data.get("goal", default_goal)}
+
+        prompt_template = load_prompt("system/research")
+        prompt = prompt_template.replace("{research_topic}", context["topic"])
+        prompt = prompt.replace("{research_goal}", context["goal"])
+        prompt += format_answers_section(data) + ONE_SHOT_APPENDIX
+
+        if dry_run:
+            console.print("\n[bold]Prompt that would be sent:[/bold]")
+            console.print(Panel(prompt, title="Research Prompt"))
+            return
+
+        run_one_shot(prompt, model, verbose, cwd)
+
+        new_status = get_research_status(cwd)
+        new_files = set(new_status["files"]) - set(status["files"])
+        if new_files:
+            console.print("[bold]New research created:[/bold]")
+            for f in sorted(new_files):
+                console.print(f"  [green]●[/green] docs/research/{f}")
+        else:
+            console.print("[yellow]No new research files were created.[/yellow]")
+
+        console.print(
+            Panel.fit(
+                "[green]Research complete![/green]\n\n"
+                "Next steps:\n"
+                "  1. Review research: [bold]ls docs/research/[/bold]\n"
+                "  2. Define specs: [bold]ralph specify[/bold]\n"
+                "  3. Run planning: [bold]ralph plan[/bold]",
+                title="Done",
+            )
+        )
+        return
 
     # Gather research context interactively
     context = {"topic": "<topic>", "goal": "<goal>"} if dry_run else gather_research_context()
