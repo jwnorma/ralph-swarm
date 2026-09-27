@@ -9,6 +9,13 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
+from ralph_swarm.noninteractive import (
+    ONE_SHOT_APPENDIX,
+    format_answers_section,
+    load_json_input,
+    run_one_shot,
+    substitute_placeholder,
+)
 from ralph_swarm.prompts import load_prompt
 
 console = Console()
@@ -80,11 +87,19 @@ def gather_prior_art() -> list[str]:
 @click.option("--verbose", "-v", is_flag=True, help="Show Claude output in real-time")
 @click.option("--dry-run", is_flag=True, help="Show prompt without executing")
 @click.option("--full", is_flag=True, help="Full specification mode with comprehensive Q&A")
+@click.option(
+    "--input",
+    "input_file",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Non-interactive mode: read spec decisions from this JSON file and run headlessly.",
+)
 def specify_cmd(
     model: str,
     verbose: bool,
     dry_run: bool,
     full: bool,
+    input_file: Path | None,
 ) -> None:
     """Build project specifications interactively.
 
@@ -92,9 +107,13 @@ def specify_cmd(
     - Iterative (default): Start with minimal V0 specs, add features later
     - Full (--full): Comprehensive Q&A to fully specify the project upfront
 
+    Pass --input with a JSON file to run non-interactively (no prompts, no
+    interactive Claude session). See docs/noninteractive.md for the format.
+
     Examples:
         ralph specify          # Interactive mode selection
         ralph specify --full   # Full specification mode
+        ralph specify --input answers.json   # One-shot, headless
     """
     cwd = Path.cwd()
 
@@ -105,6 +124,72 @@ def specify_cmd(
 
     # Check current spec status
     status = get_spec_status(cwd)
+
+    # Non-interactive path: everything is decided up front.
+    if input_file is not None:
+        data = load_json_input(input_file, required=[])
+        mode = data.get("mode", "full")
+        if mode not in ("full", "initial", "incremental"):
+            console.print(
+                f"[red]Invalid mode '{mode}' in {input_file}. "
+                "Must be one of: full, initial, incremental.[/red]"
+            )
+            sys.exit(1)
+        feature = data.get("feature")
+        if mode == "incremental" and not feature:
+            console.print(
+                f"[red]'feature' is required in {input_file} when mode is 'incremental'.[/red]"
+            )
+            sys.exit(1)
+        mode_label = {
+            "full": "Full Specification",
+            "initial": "Initial V0",
+            "incremental": f"Add Feature: {feature}",
+        }[mode]
+
+        prior_art_list = [str(r) for r in data.get("prior_art", [])]
+        prior_art_section = build_prior_art_section(prior_art_list)
+
+        prompt_template = load_prompt(f"system/specify_{mode}")
+        prompt = substitute_placeholder(prompt_template, "prior_art_section", prior_art_section)
+        if feature:
+            prompt = f"**Feature to specify:** {feature}\n\n" + prompt
+        prompt += format_answers_section(data) + ONE_SHOT_APPENDIX
+
+        console.print(
+            Panel.fit(
+                "[bold blue]Ralph Swarm[/bold blue] - Specify Mode",
+                subtitle=f"{mode_label} | One-shot | Model: {model}",
+            )
+        )
+
+        if dry_run:
+            console.print("[bold]Prompt that would be sent:[/bold]")
+            console.print(Panel(prompt, title="Specify Prompt"))
+            return
+
+        run_one_shot(prompt, model, verbose, cwd)
+
+        new_status = get_spec_status(cwd)
+        new_files = set(new_status["files"]) - set(status["files"])
+        if new_files:
+            console.print("[bold]New specs created:[/bold]")
+            for f in sorted(new_files):
+                console.print(f"  [green]●[/green] specs/{f}")
+        else:
+            console.print("[yellow]No new spec files were created.[/yellow]")
+
+        console.print(
+            Panel.fit(
+                "[green]Specification complete![/green]\n\n"
+                "Next steps:\n"
+                "  1. Review specs: [bold]ls specs/[/bold]\n"
+                "  2. Run planning: [bold]ralph plan[/bold]\n"
+                "  3. Start building: [bold]ralph build[/bold]",
+                title="Done",
+            )
+        )
+        return
 
     # Determine mode
     feature = None
